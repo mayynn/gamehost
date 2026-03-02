@@ -581,43 +581,143 @@ PAYMENTER_API_KEY=your-key
 
 ---
 
-## 🛠️ Common Commands Cheatsheet
+## 🛠️ Managing Your Server (Stop, Start, Restart, Rebuild)
 
-Run these from your project directory (`cd /opt/gamehost`):
+> **All commands below must be run from your project directory.**  
+> Always start with: `cd /opt/gamehost`
+
+### 🛑 Stop the Entire Website
 
 ```bash
-# --- Start / Stop / Restart ---
-docker compose up -d                              # start all
-docker compose down                                # stop all
-docker compose down && docker compose up -d        # restart all
-docker compose restart backend                     # restart one service
-
-# --- View Status ---
-docker compose ps                                  # container status
-docker stats                                       # live CPU/memory usage
-
-# --- View Logs ---
-docker compose logs -f                             # all logs (live)
-docker compose logs -f backend                     # backend logs only
-docker compose logs --tail=100 backend             # last 100 lines
-
-# --- Database ---
-docker compose exec postgres psql -U gamehost -d gamehost   # open DB shell
-docker compose exec backend npx prisma migrate deploy       # run migrations
-docker compose exec backend npx prisma migrate status       # check migration status
-
-# --- Rebuild After Code Changes ---
-docker compose build --no-cache                    # rebuild all containers
-docker compose down && docker compose up -d        # restart
-
-# --- Shell Access ---
-docker compose exec backend sh                     # backend shell
-docker compose exec frontend sh                    # frontend shell
-
-# --- Disk Space ---
-docker system df                                   # docker disk usage
-docker system prune -f                             # clean unused docker data
+cd /opt/gamehost
+docker compose down
 ```
+
+This stops and removes all 5 containers (backend, frontend, nginx, postgres, redis).  
+Your database data and `.env` file are **NOT deleted**.
+
+### ▶️ Start the Website
+
+```bash
+cd /opt/gamehost
+docker compose up -d
+```
+
+The `-d` flag runs everything in the background. All 5 containers will start.
+
+### 🔄 Restart Everything
+
+```bash
+cd /opt/gamehost
+docker compose down && docker compose up -d
+```
+
+This is the safest way to restart — stops everything, then starts fresh.
+
+### 🔄 Restart a Single Service
+
+```bash
+cd /opt/gamehost
+docker compose restart backend      # restart only the backend
+docker compose restart frontend     # restart only the frontend
+docker compose restart nginx        # restart only nginx
+docker compose restart postgres     # restart only database
+docker compose restart redis        # restart only redis
+```
+
+### 🔨 Rebuild After Code Changes
+
+If you changed any code and need to rebuild the containers:
+
+```bash
+cd /opt/gamehost
+docker compose build --no-cache
+docker compose down && docker compose up -d
+```
+
+Or rebuild and restart in one command:
+
+```bash
+cd /opt/gamehost
+docker compose down && docker compose up -d --build
+```
+
+### 🔨 Rebuild Only One Service
+
+```bash
+cd /opt/gamehost
+docker compose build --no-cache backend     # rebuild backend only
+docker compose build --no-cache frontend    # rebuild frontend only
+docker compose up -d                        # restart with new build
+```
+
+### 📊 Check What's Running
+
+```bash
+cd /opt/gamehost
+docker compose ps                   # show all containers and their status
+docker stats                        # live CPU and memory usage (Ctrl+C to exit)
+```
+
+### 📋 View Logs
+
+```bash
+cd /opt/gamehost
+docker compose logs -f                       # all logs, live (Ctrl+C to exit)
+docker compose logs -f backend               # backend logs only
+docker compose logs -f frontend              # frontend logs only
+docker compose logs --tail=100 backend       # last 100 lines of backend
+docker compose logs --tail=50 nginx          # last 50 lines of nginx
+```
+
+### 🏥 Health Check
+
+```bash
+# Check if the backend API is responding
+curl http://localhost:4000/api/health
+
+# Check if the website is reachable via nginx
+curl -I http://localhost
+```
+
+### 🗃️ Database Commands
+
+```bash
+cd /opt/gamehost
+
+# Open the database shell
+docker compose exec postgres psql -U gamehost -d gamehost
+
+# Run database migrations (after code updates)
+docker compose exec backend npx prisma migrate deploy
+
+# Check migration status
+docker compose exec backend npx prisma migrate status
+```
+
+### 🐚 Shell Access (Advanced)
+
+```bash
+cd /opt/gamehost
+docker compose exec backend sh      # open shell inside backend container
+docker compose exec frontend sh     # open shell inside frontend container
+docker compose exec postgres sh     # open shell inside database container
+```
+
+### 🧹 Clean Up Disk Space
+
+```bash
+# Check how much space Docker is using
+docker system df
+
+# Remove unused images and containers (safe)
+docker system prune -f
+
+# Remove everything unused including volumes (⚠️ deletes database data!)
+docker system prune -a --volumes
+```
+
+> ⚠️ **Never run `docker system prune -a --volumes`** unless you want to delete ALL your data including the database.
 
 ---
 
