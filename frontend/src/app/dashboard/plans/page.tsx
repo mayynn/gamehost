@@ -1,0 +1,104 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { plansApi } from '@/lib/api';
+import { Check, Zap, Sliders } from 'lucide-react';
+import Link from 'next/link';
+
+export default function PlansPage() {
+    const [plans, setPlans] = useState<any[]>([]);
+    const [showBuilder, setShowBuilder] = useState(false);
+    const [ram, setRam] = useState(2048);
+    const [cpu, setCpu] = useState(100);
+    const [disk, setDisk] = useState(10240);
+    const [customPrice, setCustomPrice] = useState(0);
+
+    useEffect(() => {
+        plansApi.list().then((r) => setPlans(r.data || [])).catch(() => { });
+    }, []);
+
+    const updateCustomPrice = async () => {
+        const customPlan = plans.find((p) => p.type === 'CUSTOM');
+        if (customPlan) {
+            const { data } = await plansApi.calculate({ planId: customPlan.id, ram, cpu, disk });
+            setCustomPrice(data?.price || 0);
+        }
+    };
+
+    useEffect(() => { if (showBuilder) updateCustomPrice(); }, [ram, cpu, disk, showBuilder]);
+
+    const planColors = ['from-green-500 to-emerald-500', 'from-primary to-blue-500', 'from-accent to-purple-500', 'from-orange-500 to-red-500'];
+
+    return (
+        <div>
+            <div className="mb-8">
+                <h1 className="text-2xl font-display font-bold">Choose a Plan</h1>
+                <p className="text-gray-400 mt-1">Select the perfect plan for your game server</p>
+            </div>
+
+            {/* Plans Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                {plans.filter((p) => p.type !== 'CUSTOM').map((plan, i) => (
+                    <div key={plan.id} className="glass-card-hover p-6 flex flex-col">
+                        <h3 className="text-xl font-display font-bold mb-1">{plan.name}</h3>
+                        <div className={`text-3xl font-bold bg-gradient-to-r ${planColors[i % planColors.length]} bg-clip-text text-transparent mb-4`}>
+                            {plan.type === 'FREE' ? 'Free' : `₹${plan.pricePerMonth}/mo`}
+                        </div>
+                        <p className="text-sm text-gray-400 mb-6">{plan.description || 'Game server hosting plan'}</p>
+                        <ul className="space-y-3 flex-1 mb-6">
+                            <li className="flex items-center gap-2 text-sm"><Check className="w-4 h-4 text-primary" />{plan.ram}MB RAM</li>
+                            <li className="flex items-center gap-2 text-sm"><Check className="w-4 h-4 text-primary" />{plan.cpu}% CPU</li>
+                            <li className="flex items-center gap-2 text-sm"><Check className="w-4 h-4 text-primary" />{plan.disk}MB Disk</li>
+                            <li className="flex items-center gap-2 text-sm"><Check className="w-4 h-4 text-primary" />{plan.backups} Backups</li>
+                            <li className="flex items-center gap-2 text-sm"><Check className="w-4 h-4 text-primary" />{plan.databases} Databases</li>
+                            <li className="flex items-center gap-2 text-sm"><Check className="w-4 h-4 text-primary" />Plugin Installer</li>
+                        </ul>
+                        <Link href={`/dashboard/billing?plan=${plan.id}`} className="btn-primary text-center w-full">
+                            {plan.type === 'FREE' ? 'Start Free' : 'Subscribe'}
+                        </Link>
+                    </div>
+                ))}
+            </div>
+
+            {/* Custom Builder */}
+            <div className="glass-card p-6">
+                <button onClick={() => setShowBuilder(!showBuilder)} className="flex items-center gap-3 w-full">
+                    <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center">
+                        <Sliders className="w-5 h-5 text-accent" />
+                    </div>
+                    <div className="text-left flex-1">
+                        <h3 className="font-semibold">Custom Builder</h3>
+                        <p className="text-sm text-gray-400">Configure your own server specs</p>
+                    </div>
+                    <Zap className="w-5 h-5 text-accent" />
+                </button>
+
+                {showBuilder && (
+                    <div className="mt-6 pt-6 border-t border-white/10">
+                        <div className="grid md:grid-cols-3 gap-6 mb-6">
+                            <div>
+                                <label htmlFor="custom-ram" className="text-sm text-gray-400 mb-2 block">RAM: {ram}MB ({(ram / 1024).toFixed(1)}GB)</label>
+                                <input id="custom-ram" type="range" min="512" max="16384" step="512" value={ram} onChange={(e) => setRam(Number(e.target.value))}
+                                    className="w-full accent-primary" />
+                            </div>
+                            <div>
+                                <label htmlFor="custom-cpu" className="text-sm text-gray-400 mb-2 block">CPU: {cpu}%</label>
+                                <input id="custom-cpu" type="range" min="50" max="800" step="50" value={cpu} onChange={(e) => setCpu(Number(e.target.value))}
+                                    className="w-full accent-primary" />
+                            </div>
+                            <div>
+                                <label htmlFor="custom-disk" className="text-sm text-gray-400 mb-2 block">Disk: {disk}MB ({(disk / 1024).toFixed(1)}GB)</label>
+                                <input id="custom-disk" type="range" min="1024" max="102400" step="1024" value={disk} onChange={(e) => setDisk(Number(e.target.value))}
+                                    className="w-full accent-primary" />
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <div className="text-2xl font-bold gradient-text">₹{customPrice}/mo</div>
+                            <button className="btn-primary">Deploy Custom Server</button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}

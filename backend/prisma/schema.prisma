@@ -1,0 +1,295 @@
+// ============================================================
+// GameHost Platform - Database Schema
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum AuthProvider {
+  GOOGLE
+  DISCORD
+}
+
+enum ServerStatus {
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+  DELETED
+  INSTALLING
+}
+
+enum PlanType {
+  FREE
+  PREMIUM
+  CUSTOM
+}
+
+enum NodeAssignMode {
+  ADMIN_LOCKED
+  USER_SELECTABLE
+  DYNAMIC
+}
+
+enum PaymentGateway {
+  RAZORPAY
+  CASHFREE
+  UPI
+  BALANCE
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum UpiStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum VpsStatus {
+  ACTIVE
+  SUSPENDED
+  TERMINATED
+  PROVISIONING
+}
+
+// ---------- Models ----------
+
+model User {
+  id              String        @id @default(uuid())
+  email           String        @unique
+  name            String
+  avatar          String?
+  provider        AuthProvider
+  providerId      String
+  role            Role          @default(USER)
+  pterodactylId   Int?
+  lastLoginAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  pterodactylAccount PterodactylAccount?
+  servers           Server[]
+  payments          Payment[]
+  balance           Balance?
+  credits           Credit?
+  creditEarns       CreditEarn[]
+  upiPayments       UpiPayment[]
+  vpsInstances      Vps[]
+  auditLogs         AuditLog[]
+
+  @@index([email])
+  @@index([providerId])
+}
+
+model PterodactylAccount {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  pteroUserId   Int
+  pteroUsername  String
+  pteroEmail    String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Server {
+  id              String       @id @default(uuid())
+  userId          String
+  planId          String?
+  name            String
+  pteroServerId   Int?
+  pteroUuid       String?
+  pteroIdentifier String?
+  status          ServerStatus @default(INSTALLING)
+  expiresAt       DateTime?
+  renewalNotified Boolean      @default(false)
+  isFreeServer    Boolean      @default(false)
+  ram             Int          @default(1024)
+  cpu             Int          @default(100)
+  disk            Int          @default(5120)
+  backups         Int          @default(1)
+  ports           Int          @default(1)
+  databases       Int          @default(0)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan            Plan?        @relation(fields: [planId], references: [id])
+  payments        Payment[]
+
+  @@index([userId])
+  @@index([pteroServerId])
+  @@index([status])
+}
+
+model Plan {
+  id              String         @id @default(uuid())
+  name            String
+  description     String?
+  type            PlanType
+  ram             Int            // MB
+  cpu             Int            // percent
+  disk            Int            // MB
+  backups         Int            @default(1)
+  ports           Int            @default(1)
+  databases       Int            @default(0)
+  pricePerMonth   Float          @default(0)
+  pricePerGb      Float          @default(0)
+  nodeId          Int?
+  eggId           Int?
+  nodeAssignMode  NodeAssignMode @default(DYNAMIC)
+  isActive        Boolean        @default(true)
+  sortOrder       Int            @default(0)
+
+  // Custom builder limits
+  minRam          Int?
+  maxRam          Int?
+  minCpu          Int?
+  maxCpu          Int?
+  minDisk         Int?
+  maxDisk         Int?
+  maxBackups      Int?
+  maxPorts        Int?
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  servers         Server[]
+}
+
+model Payment {
+  id              String         @id @default(uuid())
+  userId          String
+  serverId        String?
+  gateway         PaymentGateway
+  amount          Float
+  currency        String         @default("INR")
+  status          PaymentStatus  @default(PENDING)
+  gatewayOrderId  String?
+  gatewayPaymentId String?
+  metadata        Json?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  server          Server?        @relation(fields: [serverId], references: [id])
+
+  @@index([userId])
+  @@index([gatewayOrderId])
+}
+
+model Balance {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  amount    Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Credit {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  amount    Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CreditEarn {
+  id        String   @id @default(uuid())
+  userId    String
+  amount    Float
+  verified  Boolean  @default(false)
+  earnedAt  DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([earnedAt])
+}
+
+model UpiPayment {
+  id         String    @id @default(uuid())
+  userId     String
+  utr        String    @unique
+  amount     Float
+  status     UpiStatus @default(PENDING)
+  approvedBy String?
+  serverId   String?
+  planId     String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([utr])
+}
+
+model Vps {
+  id          String    @id @default(uuid())
+  userId      String
+  datalixId   String?
+  planName    String?
+  status      VpsStatus @default(PROVISIONING)
+  ip          String?
+  hostname    String?
+  os          String?
+  ram         Int?
+  cpu         Int?
+  disk        Int?
+  bandwidth   Int?
+  priceMonth  Float?
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AdminSetting {
+  id    String @id @default(uuid())
+  key   String @unique
+  value String
+
+  @@index([key])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  details   Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
