@@ -504,12 +504,65 @@ Add:
 0 */12 * * * certbot renew --quiet --pre-hook "cd /gamehost && docker compose stop nginx" --post-hook "cd /gamehost && docker compose start nginx"
 ```
 
-### Option B — Cloudflare (Easiest, no commands needed)
+### Option B — Cloudflare (Easiest, recommended)
 
-1. Add your domain to [Cloudflare](https://dash.cloudflare.com/)
-2. Point your domain's DNS A record to your VPS IP
-3. Set SSL mode to **Full** or **Full (Strict)**
-4. Done — Cloudflare handles all SSL for you
+Cloudflare gives you **free SSL, CDN, and DDoS protection** with zero commands. No certificates to manage.
+
+**Step 1 — Add your domain to Cloudflare:**
+
+1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Add a Site**
+2. Enter your domain name → Select the **Free** plan
+3. Cloudflare will scan your existing DNS records
+
+**Step 2 — Create an A record:**
+
+| Type | Name | Content | Proxy |
+|------|------|---------|-------|
+| A | `@` (or `yourdomain.com`) | `YOUR_VPS_IP` | ☁️ **ON** (orange cloud) |
+
+> With proxy ON (orange cloud), Cloudflare handles SSL, hides your real IP, and provides CDN caching.
+
+**Step 3 — Set SSL mode:**
+
+1. Go to **SSL/TLS** in Cloudflare dashboard
+2. Set encryption mode to **Full** (not "Full Strict")
+3. This works because your Nginx listens on port 80, and Cloudflare handles HTTPS for visitors
+
+```
+Visitor ──HTTPS──► Cloudflare ──HTTP──► Your VPS (port 80) ──► Nginx
+```
+
+**Step 4 — Update your nameservers:**
+
+1. Cloudflare will give you 2 nameservers (e.g. `ada.ns.cloudflare.com`)
+2. Go to your domain registrar (where you bought the domain)
+3. Replace the current nameservers with Cloudflare's
+4. Wait 5-30 minutes for DNS to propagate
+
+**Step 5 — Update your `.env`:**
+
+```bash
+nano /gamehost/.env
+```
+
+```env
+APP_URL=https://yourdomain.com
+GOOGLE_CALLBACK_URL=https://yourdomain.com/api/auth/google/callback
+DISCORD_CALLBACK_URL=https://yourdomain.com/api/auth/discord/callback
+```
+
+**Step 6 — Rebuild:**
+
+```bash
+cd /gamehost
+docker compose down && docker compose up -d --build
+```
+
+**Step 7 — Update Google Console redirect URI:**
+
+Go to [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials) → your OAuth client → add `https://yourdomain.com/api/auth/google/callback` to **Authorized redirect URIs**.
+
+✅ Done! Your site now has HTTPS with zero certificates to manage.
 
 ---
 
@@ -606,17 +659,69 @@ DISCORD_LOG_CHANNEL_ID=123456789012345678
 </details>
 
 <details>
-<summary><b>🌐 Cloudflare Auto-Subdomains</b></summary>
+<summary><b>🌐 Cloudflare Auto-Subdomains (for game servers)</b></summary>
 
-Automatically creates subdomains for game servers (e.g. `myserver.play.gamehost.com`) with A + SRV records.
+Automatically creates subdomains for each game server your users create (e.g. `myserver.play.gamehost.com`) with A + SRV records for Minecraft.
+
+> **This is optional.** Only set this up if you want users' game servers to get custom subdomains.
 
 ```env
 CLOUDFLARE_ENABLED=true
 CLOUDFLARE_API_TOKEN=your-api-token
 CLOUDFLARE_ZONE_ID=your-zone-id
-CLOUDFLARE_BASE_DOMAIN=play.gamehost.com
+CLOUDFLARE_BASE_DOMAIN=play.yourdomain.com
 ```
-Get API token: [Cloudflare Dashboard → API Tokens](https://dash.cloudflare.com/profile/api-tokens) (needs DNS Edit permission)
+
+**How to get `CLOUDFLARE_API_TOKEN`:**
+
+1. Go to [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens)
+2. Click **Create Token**
+3. Find **"Edit zone DNS"** template → click **Use template**
+4. Under **Zone Resources** → select **Include** → **Specific zone** → pick your domain
+5. Click **Continue to summary** → **Create Token**
+6. Copy the token immediately — **you can only see it once!**
+
+**How to get `CLOUDFLARE_ZONE_ID`:**
+
+1. Go to [dash.cloudflare.com](https://dash.cloudflare.com/)
+2. Click on **your domain name**
+3. You're now on the **Overview** page
+4. Look at the **right sidebar**, scroll down
+5. You'll see a section called **API** with a **Zone ID** field
+6. Click to copy it
+
+**How to choose `CLOUDFLARE_BASE_DOMAIN`:**
+
+This is whatever subdomain you want game servers to live under. Pick one:
+
+| If you set it to... | Game server subdomains look like... |
+|---------------------|--------------------------------------|
+| `play.yourdomain.com` | `myserver.play.yourdomain.com` |
+| `servers.yourdomain.com` | `myserver.servers.yourdomain.com` |
+| `mc.yourdomain.com` | `myserver.mc.yourdomain.com` |
+
+**How to create the base domain in Cloudflare:**
+
+1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com/) → click your domain
+2. Go to **DNS** → **Records** → **Add record**
+3. Create an A record for your base domain:
+
+| Type | Name | Content | Proxy |
+|------|------|---------|-------|
+| A | `play` | `YOUR_VPS_IP` | ⬜ **OFF** (gray cloud — DNS only) |
+
+> **Important:** Use proxy **OFF** (gray cloud) for game server subdomains. Cloudflare proxy doesn't support Minecraft game traffic — it only works for HTTP/HTTPS websites. Game servers need direct IP connections.
+
+4. That's it! Now the system will automatically create records like `myserver.play.yourdomain.com` under this base domain when users create servers.
+
+**What it does:**
+
+When a user creates a game server named "myserver":
+- Creates an **A record**: `myserver.play.yourdomain.com` → node IP
+- Creates an **SRV record**: `_minecraft._tcp.myserver.play.yourdomain.com` → node IP + port
+- Players can connect using `myserver.play.yourdomain.com` instead of an IP address
+
+When the server is deleted, the DNS records are automatically removed.
 </details>
 
 <details>
