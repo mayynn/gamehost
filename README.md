@@ -20,15 +20,15 @@ Automated billing · One-click plugins · VPS reselling · Admin dashboard
 ## ✨ Features
 
 <table>
-<tr><td>🔐</td><td><b>Auth</b></td><td>Google + Discord OAuth, JWT sessions, Pterodactyl account auto-heal</td></tr>
-<tr><td>🖥️</td><td><b>Servers</b></td><td>Provision, power control, live console (WebSocket), file manager, backups, databases, network, startup vars</td></tr>
+<tr><td>🔐</td><td><b>Auth</b></td><td>Google + Discord OAuth, Email signup/login with verification & password reset, JWT sessions, Pterodactyl account auto-heal</td></tr>
+<tr><td>🖥️</td><td><b>Servers</b></td><td>Provision, power control, live console (WebSocket), file manager (rename, create folder), backups (delete, download), databases (delete), reinstall, network, startup vars</td></tr>
 <tr><td>📋</td><td><b>Plans</b></td><td>Free / Premium / Custom builder with slider pricing, dynamic node assignment</td></tr>
 <tr><td>💳</td><td><b>Billing</b></td><td>Razorpay, Cashfree, UPI manual (admin approval), wallet balance, auto-renewal lifecycle</td></tr>
 <tr><td>🪙</td><td><b>Credits</b></td><td>Ad-based earning (AdSense + Adsterra), auto-suspend at 0 credits, auto-delete after inactivity</td></tr>
-<tr><td>🧩</td><td><b>Plugins</b></td><td>Search Modrinth + SpigotMC, one-click install, server software detection</td></tr>
+<tr><td>🧩</td><td><b>Plugins</b></td><td>Search Modrinth + SpigotMC (with version history), one-click install, server software detection</td></tr>
 <tr><td>👥</td><td><b>Players</b></td><td>Whitelist, ban/unban, op/deop, kick — Minecraft auto-detection</td></tr>
-<tr><td>☁️</td><td><b>VPS</b></td><td>Datalix reseller — provision, control, terminate</td></tr>
-<tr><td>⚡</td><td><b>Admin</b></td><td>Dashboard stats, user/server management, plan CRUD, UPI queue, settings, audit logs</td></tr>
+<tr><td>☁️</td><td><b>VPS</b></td><td>Datalix reseller — custom pricing (cost vs sell), provision, control, auto-billing, renewal, auto-suspend/terminate</td></tr>
+<tr><td>⚡</td><td><b>Admin</b></td><td>Dashboard stats, user/server management, plan CRUD, UPI queue, VPS plan management (sync, pricing, profit stats), alt account detection, settings, audit logs</td></tr>
 <tr><td>🤖</td><td><b>Discord</b></td><td>Bot logs payments, signups, server creation, errors as rich embeds</td></tr>
 <tr><td>🌐</td><td><b>Cloudflare</b></td><td>Auto-subdomain creation (A + SRV records for Minecraft)</td></tr>
 <tr><td>🧾</td><td><b>Paymenter</b></td><td>External billing panel integration — products, orders, invoices, coupons</td></tr>
@@ -106,11 +106,15 @@ This single command does everything:
 
 - ✅ Creates `nginx/ssl` and `backups` directories
 - ✅ **If `.env` does NOT exist** → copies `.env.example` → `.env` and generates random passwords for JWT, sessions, database, and Redis
-- ✅ **If `.env` already exists** → skips `.env` creation, keeps your existing config and secrets untouched
+- ✅ **If `.env` already exists** → merges missing keys from `.env.example`, preserves your existing config and secrets
+- ✅ Syncs DATABASE_URL and REDIS_URL connection strings
+- ✅ Auto-detects domain/VPS IP and syncs OAuth redirect URLs
+- ✅ Validates SMTP and shows email login status
 - ✅ Builds all 5 Docker containers from scratch
 - ✅ Starts PostgreSQL 16, Redis 7, Backend, Frontend, and Nginx
 - ✅ Waits for the database to be ready
 - ✅ Runs Prisma database migrations to create all tables
+- ✅ Health check with DB/Redis status and response time
 
 > **💡 Safe to run again:** If you already ran `install.sh` before and have a `.env` file, running it again will NOT overwrite your secrets or config. It will just rebuild and restart everything.
 
@@ -153,7 +157,7 @@ You should see `"status":"ok"` with database and redis both `"connected"`.
 
 Open `http://your-server-ip` in your browser. You should see the landing page.
 
-> **⚠️ Login won't work yet** — you need to configure OAuth keys first. Continue to Step 7.
+> **⚠️ OAuth login won't work yet** — you need to configure OAuth keys first. Email login works immediately if SMTP is configured. Continue to Step 7.
 
 ### Step 7 — Configure OAuth & Pterodactyl
 
@@ -192,14 +196,13 @@ Save the file (`Ctrl+X`, then `Y`, then `Enter`).
 
 ```bash
 cd /gamehost
-docker compose down
-docker compose up -d
+bash restart.sh
 ```
 
 ### Step 9 — Test login
 
 1. Open `https://yourdomain.com` in your browser
-2. Click **Login with Google** or **Login with Discord**
+2. Click **Login with Google**, **Login with Discord**, or use **Email signup**
 3. You should be redirected to your dashboard
 
 ### Step 10 — Make yourself admin
@@ -346,11 +349,14 @@ bash update.sh
 
 This does everything safely:
 
+- ✅ Auto-backs up database before any changes
 - ✅ Pulls latest code from Git (`git pull --rebase`)
+- ✅ Merges new .env keys from .env.example (without overwriting existing values)
+- ✅ Re-syncs OAuth redirect URLs based on your resolved domain/IP
 - ✅ Rebuilds all containers from scratch
-- ✅ Stops old containers → starts fresh ones
-- ✅ Waits for database to be ready
-- ✅ Runs any new database migrations
+- ✅ Graceful restart (data services stay up during rebuild)
+- ✅ Runs any new database migrations (Prisma migrate deploy)
+- ✅ Health check with response time
 - ✅ **Your `.env`, database data, and backups are NEVER touched**
 
 ### Manual update (step by step)
@@ -402,7 +408,17 @@ bash backup.sh
 ```
 
 Creates a compressed database dump at `./backups/gamehost_YYYYMMDD_HHMMSS.sql.gz`.  
-Auto-deletes backups older than 7 days.
+Auto-deletes backups older than 30 days.
+
+### Advanced backup options
+
+```bash
+bash backup.sh --verify              # verify backup integrity (checksums)
+bash backup.sh --encrypt             # encrypt with GPG (set GPG_PASSPHRASE in .env)
+bash backup.sh --full                # include Docker volumes (pgdata, redisdata)
+bash backup.sh --remote              # copy to remote server (set BACKUP_REMOTE_* in .env)
+bash backup.sh --full --verify --encrypt   # combine options
+```
 
 ### Set up automatic daily backups
 
@@ -635,11 +651,27 @@ UPI_QR_URL=https://example.com/your-qr-code.png
 <details>
 <summary><b>☁️ Datalix VPS Reselling</b></summary>
 
+Resell Datalix VPS with custom pricing.  
+**How it works:** You sync plans from Datalix (which have a cost price), then set your own sell price per plan via Admin → VPS Plans. The difference is your profit margin. Users pay from their wallet balance; billing runs daily at midnight.
+
 ```env
 DATALIX_ENABLED=true
 DATALIX_API_KEY=your-key
 DATALIX_API_URL=https://api.datalix.de/v1
 ```
+
+**After enabling:**
+1. Go to Admin → VPS Plans → **Sync from Datalix**
+2. Set sell prices for each plan (must be ≥ cost price)
+3. Toggle plans visible/hidden
+4. Users can now provision VPS from your dashboard
+
+**Revenue model:**
+- Cost price = what you pay Datalix per day
+- Sell price = what you charge users per day
+- Profit = sell price − cost price (shown in Admin → VPS Stats)
+- Auto-suspend if user balance is insufficient
+- Auto-terminate after 7 days suspended
 </details>
 
 <details>
@@ -746,6 +778,23 @@ PAYMENTER_API_KEY=your-key
 ```
 </details>
 
+<details>
+<summary><b>📧 SMTP / Email Login</b></summary>
+
+Required for email signup/login, verification emails, and password reset.  
+If not configured, emails are logged to console (dev mode) — OAuth still works without SMTP.
+
+```env
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+SMTP_FROM=noreply@gamehost.com
+```
+
+**Gmail App Password:** Go to [Google Account → Security → App Passwords](https://myaccount.google.com/apppasswords) and generate one for "Mail".
+</details>
+
 ---
 
 ## 🛠️ Managing Your Server (Stop, Start, Restart, Rebuild)
@@ -776,16 +825,16 @@ The `-d` flag runs everything in the background. All 5 containers will start.
 
 ```bash
 cd /gamehost
-docker compose down && docker compose up -d
+bash restart.sh
 ```
 
-This is the safest way to restart — stops everything, then starts fresh.
+This does a **graceful restart**: stops services in safe dependency order, preserves volumes, starts fresh, and runs health checks. Use `--force` to skip the confirmation prompt.
 
 ### 🔄 Restart a Single Service
 
 ```bash
 cd /gamehost
-docker compose restart backend      # restart only the backend
+bash restart.sh --service backend    # restart only the backend
 docker compose restart frontend     # restart only the frontend
 docker compose restart nginx        # restart only nginx
 docker compose restart postgres     # restart only database
@@ -893,7 +942,7 @@ docker system prune -a --volumes
 | Route | Page | Login Required |
 |-------|------|:-:|
 | `/` | Landing page (3D Three.js scene) | No |
-| `/login` | Google + Discord OAuth login | No |
+| `/login` | Email login/signup + Google & Discord OAuth | No |
 | `/dashboard` | User dashboard | Yes |
 | `/dashboard/servers` | Your servers list | Yes |
 | `/dashboard/servers/create` | Create new server | Yes |
@@ -914,10 +963,16 @@ docker system prune -a --volumes
 All routes prefixed with `/api`. Auth = JWT via cookie or `Authorization: Bearer` header.
 
 <details>
-<summary><b>Auth</b> — 6 routes</summary>
+<summary><b>Auth</b> — 12 routes</summary>
 
 | Method | Route | Auth | Description |
 |--------|-------|:----:|-------------|
+| POST | `/auth/register` | — | Email signup (sends verification) |
+| POST | `/auth/login` | — | Email login |
+| GET | `/auth/verify-email` | — | Verify email token |
+| POST | `/auth/forgot-password` | — | Request password reset |
+| POST | `/auth/reset-password` | — | Reset password with token |
+| POST | `/auth/resend-verification` | — | Resend verification email |
 | GET | `/auth/google` | — | Redirect to Google OAuth |
 | GET | `/auth/google/callback` | — | Google callback |
 | GET | `/auth/discord` | — | Redirect to Discord OAuth |
@@ -927,13 +982,14 @@ All routes prefixed with `/api`. Auth = JWT via cookie or `Authorization: Bearer
 </details>
 
 <details>
-<summary><b>Servers</b> — 18 routes</summary>
+<summary><b>Servers</b> — 25 routes</summary>
 
 | Method | Route | Description |
 |--------|-------|-------------|
 | GET | `/servers` | List your servers (with live status) |
 | GET | `/servers/:id` | Server details |
 | POST | `/servers` | Create server |
+| DELETE | `/servers/:id` | Delete server |
 | POST | `/servers/:id/power` | Power (start/stop/restart/kill) |
 | GET | `/servers/:id/console` | WebSocket credentials |
 | POST | `/servers/:id/command` | Send console command |
@@ -941,14 +997,20 @@ All routes prefixed with `/api`. Auth = JWT via cookie or `Authorization: Bearer
 | GET | `/servers/:id/files/contents?file=` | Read file |
 | POST | `/servers/:id/files/write` | Write file |
 | POST | `/servers/:id/files/delete` | Delete files |
+| PUT | `/servers/:id/files/rename` | Rename file/folder |
+| POST | `/servers/:id/files/folder` | Create folder |
 | GET | `/servers/:id/files/upload` | Upload URL |
 | GET | `/servers/:id/backups` | List backups |
 | POST | `/servers/:id/backups` | Create backup |
+| DELETE | `/servers/:id/backups/:backupId` | Delete backup |
+| GET | `/servers/:id/backups/:backupId/download` | Download backup |
 | GET | `/servers/:id/databases` | List databases |
 | POST | `/servers/:id/databases` | Create database |
+| DELETE | `/servers/:id/databases/:dbId` | Delete database |
 | GET | `/servers/:id/network` | Network allocations |
 | GET | `/servers/:id/startup` | Startup variables |
 | POST | `/servers/:id/startup` | Update startup var |
+| POST | `/servers/:id/reinstall` | Reinstall server |
 
 All routes require auth ✅
 </details>
@@ -995,7 +1057,7 @@ All routes require auth ✅
 </details>
 
 <details>
-<summary><b>Plugins</b> — 10 routes</summary>
+<summary><b>Plugins</b> — 11 routes</summary>
 
 | Method | Route | Description |
 |--------|-------|-------------|
@@ -1008,6 +1070,7 @@ All routes require auth ✅
 | POST | `/plugins/:uuid/modrinth/install` | Install from Modrinth |
 | GET | `/plugins/spiget/search` | Search SpigotMC |
 | GET | `/plugins/spiget/resource/:id` | Spiget resource |
+| GET | `/plugins/spiget/resource/:id/versions` | Spiget version history |
 | POST | `/plugins/:uuid/spiget/install` | Install from SpigotMC |
 
 All routes require auth ✅
@@ -1035,22 +1098,23 @@ All routes require auth ✅
 </details>
 
 <details>
-<summary><b>VPS</b> — 6 routes</summary>
+<summary><b>VPS</b> — 7 routes</summary>
 
 | Method | Route | Description |
 |--------|-------|-------------|
-| GET | `/vps/plans` | List VPS plans |
+| GET | `/vps/plans` | List VPS plans (with sell prices) |
 | GET | `/vps` | Your VPS instances |
-| POST | `/vps` | Provision VPS |
+| POST | `/vps` | Provision VPS (deducts balance) |
 | GET | `/vps/:id` | VPS status |
 | POST | `/vps/:id/control` | Control (start/stop/restart) |
-| DELETE | `/vps/:id` | Terminate |
+| POST | `/vps/:id/renew` | Renew VPS (extend billing) |
+| DELETE | `/vps/:id` | Terminate (auto-refund on failure) |
 
 All routes require auth ✅
 </details>
 
 <details>
-<summary><b>Admin</b> — 19 routes 🔒</summary>
+<summary><b>Admin</b> — 28 routes 🔒</summary>
 
 | Method | Route | Description |
 |--------|-------|-------------|
@@ -1073,6 +1137,15 @@ All routes require auth ✅
 | GET | `/admin/audit` | Audit logs (paginated) |
 | GET | `/admin/nodes` | Pterodactyl nodes |
 | GET | `/admin/eggs` | Pterodactyl eggs |
+| GET | `/admin/alts` | All detected alt accounts |
+| GET | `/admin/users/:id/alts` | Alt accounts for user |
+| GET | `/admin/users/:id/linked-accounts` | Linked OAuth accounts |
+| POST | `/admin/alts/delete` | Remove alt record |
+| GET | `/admin/vps/plans` | List VPS plans (cost/sell) |
+| POST | `/admin/vps/plans/sync` | Sync plans from Datalix |
+| PATCH | `/admin/vps/plans/:id` | Update VPS plan pricing |
+| DELETE | `/admin/vps/plans/:id` | Delete VPS plan |
+| GET | `/admin/vps/stats` | VPS profit stats |
 
 Requires ADMIN role
 </details>
@@ -1084,6 +1157,14 @@ Requires ADMIN role
 curl http://localhost:4000/api/health
 ```
 Returns: status, DB/Redis connectivity, uptime, memory, Node version. No auth needed.
+</details>
+
+<details>
+<summary><b>Settings</b> — 1 route</summary>
+
+| Method | Route | Auth | Description |
+|--------|-------|:----:|-------------|
+| GET | `/settings/public` | — | Public platform settings (support URL, app name, etc.) |
 </details>
 
 ---
@@ -1099,6 +1180,7 @@ No setup needed — these run automatically when the backend starts.
 | 1 hour | Flags servers expiring within 7 days for renewal notification |
 | 30 min | Suspends free servers when user has 0 credits |
 | 30 min | Deletes free servers suspended longer than `FREE_SERVER_DELETE_DAYS` |
+| Daily (midnight) | VPS billing — deducts daily cost from balance, suspends if insufficient, terminates after 7 days suspended |
 
 ---
 
@@ -1108,17 +1190,19 @@ No setup needed — these run automatically when the backend starts.
 gamehost/
 ├── backend/                 NestJS 10 + Prisma 5
 │   ├── src/modules/         14 feature modules (auth, servers, plans, billing, etc.)
-│   ├── src/common/          Guards, decorators, filters, health check
-│   ├── prisma/schema.prisma Database schema (12 models, 8 enums)
+│   ├── src/common/          Guards, decorators, filters, health check, settings
+│   ├── prisma/schema.prisma Database schema (15 models, 9 enums)
 │   └── Dockerfile           Multi-stage build (Node 20 Alpine)
 ├── frontend/                Next.js 14 + Tailwind + Three.js + Framer Motion
 │   ├── src/app/             14 pages
 │   └── Dockerfile           Multi-stage build (Node 20 Alpine)
 ├── nginx/nginx.conf         Reverse proxy, rate limiting, security headers, SSL-ready
 ├── docker-compose.yml       5 services: postgres, redis, backend, frontend, nginx
-├── install.sh               First-time setup
-├── update.sh                Safe update (pull + rebuild + migrate)
-└── backup.sh                Database backup with 7-day rotation
+├── install.sh               First-time setup (smart .env, secrets, OAuth sync, build)
+├── update.sh                Safe update (backup, pull, rebuild, migrate, health check)
+├── restart.sh               Graceful restart (single service or full, health checks)
+├── backup.sh                Backup (DB dump, .env, full volumes, encrypt, remote, rotate)
+└── .env.example             Configuration template with all variables
 ```
 
 ---
@@ -1205,11 +1289,12 @@ bash install.sh                      # fresh install
 
 | Layer | Protection |
 |-------|-----------|
-| Auth | OAuth-only — zero passwords stored |
+| Auth | OAuth (Google + Discord) + Email login with bcrypt-hashed passwords, email verification |
 | Tokens | httpOnly + secure + SameSite cookies (7-day expiry) |
 | Backend | Helmet, CORS (single origin), class-validator (whitelist mode) |
 | Rate Limiting | NestJS: 100 req/60s global · Nginx: 30 req/s API, 5 req/min auth |
 | Access Control | Role-based guards (USER / ADMIN) |
+| Alt Detection | Admin can detect alt accounts via linked OAuth providers, IP, fingerprint |
 | Headers | X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, Referrer-Policy |
 | Proxy | Nginx with gzip, WebSocket support, SSL-ready with HSTS |
 

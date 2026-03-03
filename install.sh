@@ -860,8 +860,9 @@ echo -e "${GRAY}   ║${NC}   ${WHITE}${BOLD}Next Steps${NC}                    
 echo -e "${GRAY}   ║${NC}   ${DIM}1. Configure OAuth secrets in .env (client IDs/secrets)${NC}    ${GRAY}║${NC}"
 echo -e "${GRAY}   ║${NC}   ${DIM}2. Configure Pterodactyl keys in .env${NC}                      ${GRAY}║${NC}"
 echo -e "${GRAY}   ║${NC}   ${DIM}3. Configure SMTP in .env for email login (optional)${NC}       ${GRAY}║${NC}"
-echo -e "${GRAY}   ║${NC}   ${DIM}4. Restart: bash restart.sh${NC}                                ${GRAY}║${NC}"
-echo -e "${GRAY}   ║${NC}   ${DIM}5. View logs: docker compose logs -f backend${NC}               ${GRAY}║${NC}"
+echo -e "${GRAY}   ║${NC}   ${DIM}4. If VPS reselling: sync plans in Admin → VPS Plans${NC}       ${GRAY}║${NC}"
+echo -e "${GRAY}   ║${NC}   ${DIM}5. Restart: bash restart.sh${NC}                                ${GRAY}║${NC}"
+echo -e "${GRAY}   ║${NC}   ${DIM}6. View logs: docker compose logs -f backend${NC}               ${GRAY}║${NC}"
 echo -e "${GRAY}   ║${NC}                                                              ${GRAY}║${NC}"
 echo -e "${GRAY}   ╚══════════════════════════════════════════════════════════════╝${NC}"
 

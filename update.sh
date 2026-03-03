@@ -630,7 +630,9 @@ if [ -n "$BACKUP_FILE" ] && [ -f "$BACKUP_FILE" ]; then
 echo -e "${GRAY}   ║${NC}   ${GREEN}✔${NC} Pre-update backup: ${DIM}${BACKUP_FILE}${NC}              ${GRAY}║${NC}"
 fi
 echo -e "${GRAY}   ║${NC}                                                              ${GRAY}║${NC}"
-echo -e "${GRAY}   ║${NC}   ${DIM}View logs: docker compose logs -f backend${NC}                  ${GRAY}║${NC}"
+echo -e "${GRAY}   ║${NC}   ${WHITE}${BOLD}Post-Update Checklist${NC}                                       ${GRAY}║${NC}"
+echo -e "${GRAY}   ║${NC}   ${DIM}• If VPS plans changed: Admin → VPS Plans → Sync${NC}           ${GRAY}║${NC}"
+echo -e "${GRAY}   ║${NC}   ${DIM}• View logs: docker compose logs -f backend${NC}                 ${GRAY}║${NC}"
 echo -e "${GRAY}   ║${NC}                                                              ${GRAY}║${NC}"
 echo -e "${GRAY}   ╚══════════════════════════════════════════════════════════════╝${NC}"
 
