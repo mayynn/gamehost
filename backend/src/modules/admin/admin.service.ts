@@ -1,10 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { PlansService } from '../plans/plans.service';
 import { BillingService } from '../billing/billing.service';
 import { PterodactylService } from '../pterodactyl/pterodactyl.service';
 import { VpsService } from '../vps/vps.service';
+import { ServerStatus } from '@prisma/client';
 
 @Injectable()
 export class AdminService {
@@ -92,7 +93,7 @@ export class AdminService {
         }
         return this.prisma.server.update({
             where: { id: serverId },
-            data: { status: 'SUSPENDED' },
+            data: { status: ServerStatus.SUSPENDED },
         });
     }
 
@@ -103,7 +104,7 @@ export class AdminService {
         }
         return this.prisma.server.update({
             where: { id: serverId },
-            data: { status: 'ACTIVE' },
+            data: { status: ServerStatus.ACTIVE },
         });
     }
 
@@ -412,7 +413,7 @@ export class AdminService {
             where: { vpsPlanId: id, status: { not: 'TERMINATED' } },
         });
         if (activeCount > 0) {
-            throw new Error(`Cannot delete plan with ${activeCount} active VPS instances`);
+            throw new ConflictException(`Cannot delete plan with ${activeCount} active VPS instances`);
         }
         return this.prisma.vpsPlan.delete({ where: { id } });
     }

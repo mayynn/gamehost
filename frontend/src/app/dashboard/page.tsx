@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Server, Wallet, Gift, Activity, ArrowUpRight } from 'lucide-react';
+import { Server, Wallet, Gift, Activity, ArrowUpRight, Loader2 } from 'lucide-react';
 import { authApi, serversApi, billingApi, creditsApi } from '@/lib/api';
 import Link from 'next/link';
 
@@ -10,22 +10,31 @@ export default function DashboardPage() {
     const [servers, setServers] = useState<any[]>([]);
     const [balance, setBalance] = useState(0);
     const [credits, setCredits] = useState(0);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         Promise.all([
             authApi.getMe().then((r) => setUser(r.data.user)).catch(() => { }),
             serversApi.list().then((r) => setServers(r.data || [])).catch(() => { }),
-            billingApi.balance().then((r) => setBalance(r.data || 0)).catch(() => { }),
+            billingApi.balance().then((r) => setBalance(r.data?.balance ?? r.data ?? 0)).catch(() => { }),
             creditsApi.get().then((r) => setCredits(r.data || 0)).catch(() => { }),
-        ]);
+        ]).finally(() => setLoading(false));
     }, []);
 
     const stats = [
         { label: 'Active Servers', value: servers.filter((s) => s.status === 'ACTIVE').length, icon: Server, color: 'text-green-400 bg-green-500/10' },
         { label: 'Total Servers', value: servers.length, icon: Activity, color: 'text-blue-400 bg-blue-500/10' },
-        { label: 'Balance', value: `₹${balance}`, icon: Wallet, color: 'text-primary bg-primary/10' },
+        { label: 'Balance', value: `₹${typeof balance === 'number' ? balance.toFixed(2) : balance}`, icon: Wallet, color: 'text-primary bg-primary/10' },
         { label: 'Credits', value: credits, icon: Gift, color: 'text-accent bg-accent/10' },
     ];
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center py-20">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+        );
+    }
 
     return (
         <div>

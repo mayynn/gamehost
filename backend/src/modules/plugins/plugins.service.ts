@@ -234,4 +234,68 @@ export class PluginsService {
         const dir = type === 'mod' ? '/mods' : '/plugins';
         return this.pterodactylClient.deleteFiles(serverUuid, dir, [fileName]);
     }
+
+    // ========== PLUGIN UPDATE CHECKING ==========
+
+    async checkPluginUpdates(serverUuid: string): Promise<any[]> {
+        try {
+            const installed = await this.getInstalledPlugins(serverUuid);
+            if (!installed.length) return [];
+
+            const updates: any[] = [];
+
+            for (const plugin of installed.slice(0, 20)) {
+                const name = plugin.name?.replace(/\.jar$/i, '')
+                    .replace(/[-_]\d+(\.\d+){0,3}$/g, '') // strip version suffix
+                    .replace(/[-_]/g, ' ')
+                    .trim();
+
+                if (!name) continue;
+
+                try {
+                    // Search Modrinth first (more reliable results)
+                    const modrinth = await this.searchModrinth(name, { limit: 1 });
+                    if (modrinth?.hits?.[0]) {
+                        const hit = modrinth.hits[0];
+                        updates.push({
+                            fileName: plugin.name,
+                            fileSize: plugin.size,
+                            source: 'modrinth',
+                            projectId: hit.project_id || hit.slug,
+                            latestVersion: hit.latest_version,
+                            title: hit.title,
+                            description: hit.description,
+                            downloads: hit.downloads,
+                            iconUrl: hit.icon_url,
+                            dateModified: hit.date_modified,
+                        });
+                        continue;
+                    }
+
+                    // Fallback to Spiget
+                    const spiget = await this.searchSpiget(name, 1, 1);
+                    if (spiget?.[0]) {
+                        const res = spiget[0];
+                        updates.push({
+                            fileName: plugin.name,
+                            fileSize: plugin.size,
+                            source: 'spiget',
+                            resourceId: res.id,
+                            title: res.name,
+                            downloads: res.downloads,
+                            updateDate: res.updateDate,
+                            testedVersions: res.testedVersions,
+                        });
+                    }
+                } catch {
+                    // Silently skip unresolvable plugins
+                }
+            }
+
+            return updates;
+        } catch (e) {
+            this.logger.error(`Check updates failed: ${e.message}`);
+            return [];
+        }
+    }
 }

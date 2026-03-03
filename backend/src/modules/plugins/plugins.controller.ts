@@ -28,6 +28,12 @@ export class PluginsController {
         return this.pluginsService.getInstalledPlugins(uuid);
     }
 
+    @Get(':serverUuid/check-updates')
+    async checkUpdates(@CurrentUser() user: any, @Param('serverUuid') uuid: string) {
+        await this.verifyOwnership(user, uuid);
+        return this.pluginsService.checkPluginUpdates(uuid);
+    }
+
     @Delete(':serverUuid/remove/:fileName')
     async remove(@CurrentUser() user: any, @Param('serverUuid') uuid: string, @Param('fileName') fileName: string) {
         await this.verifyOwnership(user, uuid);

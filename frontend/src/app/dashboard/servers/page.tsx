@@ -3,16 +3,17 @@
 import { useState, useEffect } from 'react';
 import { serversApi } from '@/lib/api';
 import Link from 'next/link';
-import { Server, ArrowUpRight, Plus, Activity, HardDrive, Cpu, MemoryStick } from 'lucide-react';
+import { Server, ArrowUpRight, Plus, HardDrive, Cpu, MemoryStick, AlertCircle } from 'lucide-react';
 
 export default function ServersPage() {
     const [servers, setServers] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
 
     useEffect(() => {
         serversApi.list()
             .then((r) => setServers(r.data || []))
-            .catch(() => { })
+            .catch((e) => setError(e?.response?.data?.message || 'Failed to load servers'))
             .finally(() => setLoading(false));
     }, []);
 
@@ -32,7 +33,14 @@ export default function ServersPage() {
                 </Link>
             </div>
 
-            {servers.length === 0 ? (
+            {error && (
+                <div className="glass-card p-6 mb-6 border-red-500/30 flex items-center gap-3">
+                    <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
+                    <p className="text-sm text-red-400">{error}</p>
+                </div>
+            )}
+
+            {servers.length === 0 && !error ? (
                 <div className="glass-card p-16 text-center">
                     <Server className="w-16 h-16 mx-auto mb-4 text-gray-600" />
                     <h3 className="text-xl font-semibold mb-2">No servers yet</h3>

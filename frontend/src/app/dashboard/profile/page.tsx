@@ -38,7 +38,7 @@ export default function ProfilePage() {
         if (newPassword !== confirmPassword) return toast.error('Passwords do not match');
         setSaving(true);
         try {
-            await authApi.resetPassword('', newPassword);
+            await usersApi.changePassword({ newPassword });
             setChangingPassword(false);
             setNewPassword('');
             setConfirmPassword('');
@@ -179,10 +179,27 @@ export default function ProfilePage() {
                                     onKeyDown={(e) => e.key === 'Enter' && changePassword()} />
                             </div>
                             {newPassword && (
-                                <div className="flex gap-1">
-                                    {[1, 2, 3, 4].map((level) => (
-                                        <div key={level} className={`h-1 flex-1 rounded-full ${newPassword.length >= level * 3 ? (level >= 3 ? 'bg-green-500' : level >= 2 ? 'bg-yellow-500' : 'bg-red-500') : 'bg-white/10'}`} />
-                                    ))}
+                                <div>
+                                    <div className="flex gap-1 mb-1">
+                                        {[1, 2, 3, 4].map((level) => {
+                                            let score = 0;
+                                            if (newPassword.length >= 8) score++;
+                                            if (/[A-Z]/.test(newPassword)) score++;
+                                            if (/[0-9]/.test(newPassword)) score++;
+                                            if (/[^A-Za-z0-9]/.test(newPassword)) score++;
+                                            return (
+                                                <div key={level} className={`h-1.5 flex-1 rounded-full transition-colors ${score >= level
+                                                    ? score >= 4 ? 'bg-green-500' : score >= 3 ? 'bg-emerald-400' : score >= 2 ? 'bg-yellow-500' : 'bg-red-500'
+                                                    : 'bg-white/10'
+                                                    }`} />
+                                            );
+                                        })}
+                                    </div>
+                                    <p className="text-xs text-gray-500">
+                                        {newPassword.length < 8 ? 'Too short' :
+                                            (/[A-Z]/.test(newPassword) && /[0-9]/.test(newPassword) && /[^A-Za-z0-9]/.test(newPassword)) ? 'Strong' :
+                                            (/[A-Z]/.test(newPassword) && /[0-9]/.test(newPassword)) ? 'Good' : 'Weak — add uppercase, numbers, symbols'}
+                                    </p>
                                 </div>
                             )}
                             <button

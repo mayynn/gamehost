@@ -121,12 +121,13 @@ export class ServersService {
 
         // Determine node/allocation
         let deploy: any = undefined;
+        let allocation: any = undefined;
         if (data.nodeId) {
             // Get a free allocation from the specified node
             const allocations = await this.pterodactyl.getNodeAllocations(data.nodeId);
             const freeAlloc = allocations?.data?.find((a: any) => !a.attributes.assigned);
             if (!freeAlloc) throw new BadRequestException('No free allocations on selected node');
-            deploy = undefined;
+            allocation = { default: freeAlloc.attributes.id };
         } else {
             // Dynamic: let Pterodactyl auto-deploy
             const locations = await this.pterodactyl.getLocations();
@@ -148,6 +149,7 @@ export class ServersService {
             limits: { memory: ram, swap: 0, disk, io: 500, cpu },
             feature_limits: { databases: plan.databases, backups: plan.backups, allocations: plan.ports },
             deploy,
+            allocation,
         });
 
         if (!pteroServer) throw new BadRequestException('Failed to create server in Pterodactyl');

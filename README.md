@@ -241,6 +241,47 @@ Now when you refresh the website, you'll have access to the **Admin Dashboard** 
 
 ---
 
+## 🐳 Docker Architecture
+
+The platform runs 5 containers optimized for VPS deployment:
+
+```
+Internet ──► :80/:443 ──► Nginx (128MB)
+                            ├── /api/  ──► Backend:4000 (512MB) ──► PostgreSQL:5432 (512MB)
+                            │                                   └── Redis:6379 (256MB)
+                            └── /      ──► Frontend:3000 (256MB)
+```
+
+**VPS hardening applied:**
+
+| Feature | Detail |
+|---------|--------|
+| Network isolation | DB, Redis, Backend, Frontend bound to `127.0.0.1` — only Nginx faces the internet |
+| Non-root containers | Backend & Frontend run as `appuser:1001`, not root |
+| Signal handling | `dumb-init` as PID 1 for proper SIGTERM forwarding (graceful shutdown) |
+| Memory limits | Per-container limits prevent any single service from OOM-killing the VPS |
+| Log rotation | `json-file` driver with `max-size` + `max-file` so logs never fill your disk |
+| Redis tuning | `maxmemory 128mb` with LRU eviction, password-protected, RDB persistence |
+| Nginx optimization | `epoll`, upstream keepalive, proxy buffering, open file cache, WebSocket `map` |
+| Rate limiting | 30 req/s API, 5 req/min auth — returns proper HTTP 429 |
+| Security headers | HSTS-ready, X-Frame-Options, CSP-compatible, Permissions-Policy, `server_tokens off` |
+
+---
+
+## 💻 GitHub Codespaces
+
+The project includes a `.devcontainer/devcontainer.json` for one-click development in GitHub Codespaces.
+
+1. Open the repo on GitHub
+2. Click **Code** → **Codespaces** → **Create codespace on main**
+3. Wait for the container to build (Docker-in-Docker + Node 20 are auto-installed)
+4. Run `bash install.sh` in the terminal
+5. Port 80 auto-forwards — click the URL to open your instance
+
+> Codespaces uses Docker-in-Docker, so all 5 containers run inside the codespace. Internal ports (3000, 4000, 5432, 6379) are silenced — only port 80 (Nginx) auto-opens.
+
+---
+
 ## ❓ Troubleshooting
 
 ### "Refused to connect" when clicking Login
@@ -759,13 +800,37 @@ When the server is deleted, the DNS records are automatically removed.
 <details>
 <summary><b>🪙 Credits / Ads System</b></summary>
 
+Users earn free credits by watching ads. Anti-adblock detection ensures ads are actually displayed — users with ad blockers cannot earn credits.
+
+**Supports multiple ad networks simultaneously** for maximum revenue:
+
 ```env
 FREE_CREDITS_TIMER_SECONDS=60     # seconds between earns
 FREE_CREDITS_REWARD=10             # credits per earn  
 FREE_SERVER_DELETE_DAYS=7          # delete suspended free servers after X days
 ADSENSE_PUBLISHER_ID=ca-pub-xxxxxxxxxx
+
+# Multiple Adsterra scripts (comma-separated) — each renders a separate ad zone
+ADSTERRA_SCRIPT_URLS=https://pl12345.youradexchange.com/sdk.js,https://pl67890.youradexchange.com/sdk.js
+# Legacy single URL (still works if you only have one)
 ADSTERRA_SCRIPT_URL=https://...
 ```
+
+**How to get Adsterra script URLs:**
+1. Sign up at [Adsterra](https://adsterra.com/) (publisher account)
+2. Create ad units (Banner 300×250, Native Banner, Social Bar, etc.)
+3. Copy each unit's `<script src="...">` URL
+4. Paste them comma-separated into `ADSTERRA_SCRIPT_URLS`
+5. More ad zones = more revenue per credit earn
+
+**Features:**
+- ✅ Multiple simultaneous Adsterra ad zones for higher RPM
+- ✅ AdSense + Adsterra can run side by side
+- ✅ Anti-adblock detection (blocks earning if ads are hidden)
+- ✅ Countdown timer with circular progress animation
+- ✅ Server-side rate limiting (2 earns per minute max)
+- ✅ Auto-suspend free servers when credits hit 0
+- ✅ Auto-delete suspended free servers after configurable days
 </details>
 
 <details>
@@ -787,6 +852,7 @@ If not configured, emails are logged to console (dev mode) — OAuth still works
 ```env
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
+SMTP_SECURE=false
 SMTP_USER=your-email@gmail.com
 SMTP_PASS=your-app-password
 SMTP_FROM=noreply@gamehost.com
@@ -884,6 +950,12 @@ docker compose logs -f backend               # backend logs only
 docker compose logs -f frontend              # frontend logs only
 docker compose logs --tail=100 backend       # last 100 lines of backend
 docker compose logs --tail=50 nginx          # last 50 lines of nginx
+
+# Or use npm shortcuts from the project root:
+npm run logs                                  # all logs
+npm run logs:backend                          # backend only
+npm run logs:frontend                         # frontend only
+npm run status                                # container status
 ```
 
 ### 🏥 Health Check
@@ -1151,6 +1223,16 @@ Requires ADMIN role
 </details>
 
 <details>
+<summary><b>Users</b> — 3 routes</summary>
+
+| Method | Route | Auth | Description |
+|--------|-------|:----:|-------------|
+| GET | `/users/profile` | ✅ | Get current user profile |
+| PATCH | `/users/profile` | ✅ | Update profile (name, etc.) |
+| POST | `/users/change-password` | ✅ | Change password (requires current password) |
+</details>
+
+<details>
 <summary><b>Health</b> — 1 route</summary>
 
 ```bash
@@ -1178,6 +1260,7 @@ No setup needed — these run automatically when the backend starts.
 | 1 hour | Suspends expired servers |
 | 1 hour | Deletes servers suspended for 48+ hours |
 | 1 hour | Flags servers expiring within 7 days for renewal notification |
+| 1 hour | Auto-syncs Pterodactyl eggs (keeps game templates up to date) |
 | 30 min | Suspends free servers when user has 0 credits |
 | 30 min | Deletes free servers suspended longer than `FREE_SERVER_DELETE_DAYS` |
 | Daily (midnight) | VPS billing — deducts daily cost from balance, suspends if insufficient, terminates after 7 days suspended |
@@ -1192,12 +1275,13 @@ gamehost/
 │   ├── src/modules/         14 feature modules (auth, servers, plans, billing, etc.)
 │   ├── src/common/          Guards, decorators, filters, health check, settings
 │   ├── prisma/schema.prisma Database schema (15 models, 9 enums)
-│   └── Dockerfile           Multi-stage build (Node 20 Alpine)
+│   └── Dockerfile           Multi-stage build (Node 20 Alpine, non-root, dumb-init)
 ├── frontend/                Next.js 14 + Tailwind + Three.js + Framer Motion
 │   ├── src/app/             14 pages
-│   └── Dockerfile           Multi-stage build (Node 20 Alpine)
-├── nginx/nginx.conf         Reverse proxy, rate limiting, security headers, SSL-ready
-├── docker-compose.yml       5 services: postgres, redis, backend, frontend, nginx
+│   └── Dockerfile           Multi-stage build (Node 20 Alpine, non-root, dumb-init)
+├── nginx/nginx.conf         Reverse proxy, rate limiting, WebSocket, security headers, SSL-ready
+├── docker-compose.yml       5 services with memory limits, log rotation, localhost binding
+├── .devcontainer/           GitHub Codespaces config (Docker-in-Docker, port forwarding)
 ├── install.sh               First-time setup (smart .env, secrets, OAuth sync, build)
 ├── update.sh                Safe update (backup, pull, rebuild, migrate, health check)
 ├── restart.sh               Graceful restart (single service or full, health checks)

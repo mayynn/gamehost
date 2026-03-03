@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ServersService } from '../servers/servers.service';
+import { PterodactylService } from '../pterodactyl/pterodactyl.service';
 import { PaymentGateway, PaymentStatus, ServerStatus, UpiStatus } from '@prisma/client';
 import axios from 'axios';
 import * as crypto from 'crypto';
@@ -15,6 +16,7 @@ export class BillingService {
         private prisma: PrismaService,
         private config: ConfigService,
         private serversService: ServersService,
+        private pterodactyl: PterodactylService,
     ) { }
 
     // ========== RAZORPAY ==========
@@ -62,7 +64,10 @@ export class BillingService {
         razorpay_payment_id: string;
         razorpay_signature: string;
     }): Promise<any> {
-        const secret = this.config.get('RAZORPAY_KEY_SECRET');
+        const secret = this.config.get('RAZORPAY_KEY_SECRET', '');
+        if (!secret) {
+            throw new BadRequestException('Razorpay is not configured');
+        }
         const body = data.razorpay_order_id + '|' + data.razorpay_payment_id;
         const expectedSignature = crypto
             .createHmac('sha256', secret)
@@ -124,8 +129,8 @@ export class BillingService {
             },
             {
                 headers: {
-                    'x-client-id': this.config.get('CASHFREE_APP_ID'),
-                    'x-client-secret': this.config.get('CASHFREE_SECRET_KEY'),
+                    'x-client-id': this.config.get('CASHFREE_APP_ID', ''),
+                    'x-client-secret': this.config.get('CASHFREE_SECRET_KEY', ''),
                     'x-api-version': '2023-08-01',
                     'Content-Type': 'application/json',
                 },
@@ -158,8 +163,8 @@ export class BillingService {
 
         const { data: order } = await axios.get(`${baseUrl}/orders/${orderId}`, {
             headers: {
-                'x-client-id': this.config.get('CASHFREE_APP_ID'),
-                'x-client-secret': this.config.get('CASHFREE_SECRET_KEY'),
+                'x-client-id': this.config.get('CASHFREE_APP_ID', ''),
+                'x-client-secret': this.config.get('CASHFREE_SECRET_KEY', ''),
                 'x-api-version': '2023-08-01',
             },
         });
@@ -284,6 +289,16 @@ export class BillingService {
             if (server) {
                 const currentExpiry = server.expiresAt?.getTime() || Date.now();
                 const newExpiry = new Date(Math.max(Date.now(), currentExpiry) + 30 * 24 * 60 * 60 * 1000);
+
+                // Unsuspend in Pterodactyl if server was suspended
+                if (server.status === ServerStatus.SUSPENDED && server.pteroServerId) {
+                    try {
+                        await this.pterodactyl.unsuspendServer(server.pteroServerId);
+                    } catch (e: any) {
+                        this.logger.error(`Failed to unsuspend server ${server.pteroServerId} in Pterodactyl: ${e.message}`);
+                    }
+                }
+
                 await this.prisma.server.update({
                     where: { id: server.id },
                     data: { status: ServerStatus.ACTIVE, expiresAt: newExpiry, renewalNotified: false },
@@ -324,6 +339,14 @@ export class BillingService {
         });
 
         for (const server of expiredServers) {
+            // Suspend in Pterodactyl first
+            if (server.pteroServerId) {
+                try {
+                    await this.pterodactyl.suspendServer(server.pteroServerId);
+                } catch (e: any) {
+                    this.logger.error(`Failed to suspend server ${server.pteroServerId} in Pterodactyl: ${e.message}`);
+                }
+            }
             await this.prisma.server.update({
                 where: { id: server.id },
                 data: { status: ServerStatus.SUSPENDED },
@@ -361,6 +384,7 @@ export class BillingService {
             razorpay: this.config.get('RAZORPAY_ENABLED') === 'true',
             cashfree: this.config.get('CASHFREE_ENABLED') === 'true',
             upi: this.config.get('UPI_ENABLED') === 'true',
+            upiId: this.config.get('UPI_ID', ''),
             balance: true,
         };
     }
@@ -373,11 +397,17 @@ export class BillingService {
 
         if (!entity) return { status: 'ignored' };
 
-        // Verify webhook signature
+        // Verify webhook signature (Razorpay sends X-Razorpay-Signature header)
         const secret = this.config.get('RAZORPAY_WEBHOOK_SECRET', '');
-        if (secret) {
-            // Razorpay webhook signature verification would happen here
-            // using the X-Razorpay-Signature header
+        if (secret && body._rawBody) {
+            const expectedSig = crypto
+                .createHmac('sha256', secret)
+                .update(body._rawBody)
+                .digest('hex');
+            if (expectedSig !== body._signature) {
+                this.logger.warn('Razorpay webhook: invalid signature — ignoring');
+                return { status: 'invalid_signature' };
+            }
         }
 
         if (event === 'payment.captured') {
@@ -416,6 +446,21 @@ export class BillingService {
         const data = body.data;
 
         if (!data) return { status: 'ignored' };
+
+        // Verify Cashfree webhook signature
+        const cfSecret = this.config.get('CASHFREE_WEBHOOK_SECRET', '');
+        if (cfSecret && body._rawBody && body._signature) {
+            const ts = body._timestamp || '';
+            const rawBody = body._rawBody;
+            const expectedSig = crypto
+                .createHmac('sha256', cfSecret)
+                .update(ts + rawBody)
+                .digest('base64');
+            if (expectedSig !== body._signature) {
+                this.logger.warn('Cashfree webhook: invalid signature — ignoring');
+                return { status: 'invalid_signature' };
+            }
+        }
 
         if (event === 'PAYMENT_SUCCESS_WEBHOOK') {
             const orderId = data.order?.order_id;

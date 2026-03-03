@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { vpsApi, billingApi } from '@/lib/api';
-import { Server, Plus, Power, Square, Trash2, ArrowUpRight, RefreshCw, Clock, Wallet } from 'lucide-react';
+import { Server, Plus, Power, Square, Trash2, RefreshCw, Clock, Wallet } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function VpsPage() {
@@ -30,13 +30,13 @@ export default function VpsPage() {
         Promise.all([
             vpsApi.list().then((r) => setVpsList(r.data || [])),
             vpsApi.plans().then((r) => setPlans(r.data || [])),
-            billingApi.balance().then((r) => setBalance(r.data?.amount || 0)),
+            billingApi.balance().then((r) => setBalance(r.data?.balance ?? r.data ?? 0)),
         ]).finally(() => setLoading(false));
     }, []);
 
     const refreshList = () => {
         vpsApi.list().then((r) => setVpsList(r.data || []));
-        billingApi.balance().then((r) => setBalance(r.data?.amount || 0));
+        billingApi.balance().then((r) => setBalance(r.data?.balance ?? r.data ?? 0));
     };
 
     const createVps = async () => {
@@ -233,7 +233,7 @@ export default function VpsPage() {
                                         <>
                                             <button onClick={() => powerAction(vps.id, 'start')} className="p-2 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500/20" title="Start"><Power className="w-4 h-4" /></button>
                                             <button onClick={() => powerAction(vps.id, 'stop')} className="p-2 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20" title="Stop"><Square className="w-4 h-4" /></button>
-                                            <button onClick={() => powerAction(vps.id, 'restart')} className="p-2 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20" title="Restart"><ArrowUpRight className="w-4 h-4" /></button>
+                                            <button onClick={() => powerAction(vps.id, 'restart')} className="p-2 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20" title="Restart"><RefreshCw className="w-4 h-4" /></button>
                                         </>
                                     )}
                                     {/* Renew button — visible for active, suspended, or expired */}

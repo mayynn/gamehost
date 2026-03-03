@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class UsersService {
@@ -40,5 +41,26 @@ export class UsersService {
 
     async deleteUser(userId: string) {
         return this.prisma.user.delete({ where: { id: userId } });
+    }
+
+    async changePassword(userId: string, newPassword: string, currentPassword?: string) {
+        const user = await this.prisma.user.findUnique({ where: { id: userId } });
+        if (!user) throw new BadRequestException('User not found');
+
+        // If user has an existing password (EMAIL provider), verify current password
+        if (user.password && currentPassword) {
+            const valid = await bcrypt.compare(currentPassword, user.password);
+            if (!valid) throw new BadRequestException('Current password is incorrect');
+        }
+
+        if (newPassword.length < 8) throw new BadRequestException('Password must be at least 8 characters');
+
+        const hashed = await bcrypt.hash(newPassword, 12);
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: { password: hashed },
+        });
+
+        return { message: 'Password updated successfully' };
     }
 }

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -40,6 +41,11 @@ import { HealthModule } from './common/health/health.module';
         CloudflareModule,
         PaymenterModule,
         HealthModule,
+    ],
+    providers: [
+        // Enable rate-limiting globally — individual @Throttle() decorators
+        // on controllers/routes set per-route overrides.
+        { provide: APP_GUARD, useClass: ThrottlerGuard },
     ],
 })
 export class AppModule { }

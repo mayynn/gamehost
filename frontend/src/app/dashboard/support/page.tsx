@@ -1,20 +1,28 @@
 'use client';
-import { HeadphonesIcon, MessageSquare, Mail, Loader2 } from 'lucide-react';
+import { MessageSquare, Mail, Loader2 } from 'lucide-react';
 import { settingsApi } from '@/lib/api';
 import { useState, useEffect } from 'react';
 
 export default function SupportPage() {
     const [discordUrl, setDiscordUrl] = useState('');
     const [supportEmail, setSupportEmail] = useState('');
-    const [loaded, setLoaded] = useState(false);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         settingsApi.public().then((r) => {
             const settings = r.data || {};
             setDiscordUrl(settings.DISCORD_INVITE_URL || '');
             setSupportEmail(settings.SUPPORT_EMAIL || '');
-        }).catch(() => { }).finally(() => setLoaded(true));
+        }).catch(() => { }).finally(() => setLoading(false));
     }, []);
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center py-20">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+        );
+    }
 
     return (
         <div>

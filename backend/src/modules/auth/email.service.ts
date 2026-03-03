@@ -39,9 +39,11 @@ export class EmailService {
             return;
         }
 
+        const fromAddr = this.config.get('SMTP_FROM') || this.config.get('SMTP_USER') || 'noreply@gamehost.com';
+
         try {
             await this.transporter.sendMail({
-                from: `"${appName}" <${this.config.get('SMTP_FROM', this.config.get('SMTP_USER', 'noreply@gamehost.com'))}>`,
+                from: `"${appName}" <${fromAddr}>`,
                 to,
                 subject: `Verify your ${appName} account`,
                 html: `
@@ -92,9 +94,11 @@ export class EmailService {
             return;
         }
 
+        const fromAddr = this.config.get('SMTP_FROM') || this.config.get('SMTP_USER') || 'noreply@gamehost.com';
+
         try {
             await this.transporter.sendMail({
-                from: `"${appName}" <${this.config.get('SMTP_FROM', this.config.get('SMTP_USER', 'noreply@gamehost.com'))}>`,
+                from: `"${appName}" <${fromAddr}>`,
                 to,
                 subject: `Reset your ${appName} password`,
                 html: `

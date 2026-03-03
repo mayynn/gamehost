@@ -6,7 +6,9 @@ import { serversApi, pluginsApi, playersApi } from '@/lib/api';
 import {
     Play, Square, RotateCcw, Skull, Terminal, FolderOpen, Database,
     Archive, Network, Settings, Puzzle, Users, AlertTriangle, Loader2,
-    Plus, Trash2, Save, Eye, ArrowLeft, RefreshCw, Download, FolderPlus, Edit2
+    Plus, Trash2, Save, Eye, ArrowLeft, RefreshCw, Download, FolderPlus, Edit2,
+    Shield, Star, UserX, UserPlus, LogOut, Search, Wifi, WifiOff, X, MessageSquare,
+    Cpu, HardDrive, MemoryStick, Copy, Eraser, Power, Info, Tag, FileCode
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -54,10 +56,20 @@ export default function ServerDetailPage() {
     const [banned, setBanned] = useState<any[]>([]);
     const [ops, setOps] = useState<any[]>([]);
     const [playerInput, setPlayerInput] = useState('');
+    const [onlinePlayers, setOnlinePlayers] = useState<{ count: number; max: number; players: string[] }>({ count: 0, max: 0, players: [] });
+    const [playerActionLoading, setPlayerActionLoading] = useState(false);
+    const [playersRefreshing, setPlayersRefreshing] = useState(false);
+    const [banModal, setBanModal] = useState<{ player: string; reason: string } | null>(null);
+    const [kickModal, setKickModal] = useState<{ player: string; reason: string } | null>(null);
     const [deleting, setDeleting] = useState(false);
     const [newFolderName, setNewFolderName] = useState('');
     const [renamingFile, setRenamingFile] = useState<string | null>(null);
     const [renameValue, setRenameValue] = useState('');
+    const [serverSoftware, setServerSoftware] = useState<{ software: string; type: string } | null>(null);
+    const [consoleConnected, setConsoleConnected] = useState(false);
+    const [consoleAutoScroll, setConsoleAutoScroll] = useState(true);
+    const [pluginUpdates, setPluginUpdates] = useState<any[]>([]);
+    const [checkingUpdates, setCheckingUpdates] = useState(false);
 
     const serverId = id as string;
 
@@ -70,6 +82,14 @@ export default function ServerDetailPage() {
     }, [serverId]);
 
     useEffect(() => { loadServer(); }, [loadServer]);
+
+    // Auto-detect server software when server loads
+    useEffect(() => {
+        if (!server?.pteroUuid) return;
+        pluginsApi.detect(server.pteroUuid)
+            .then((r) => setServerSoftware(r.data))
+            .catch(() => {});
+    }, [server?.pteroUuid]);
 
     const powerAction = async (action: string) => {
         try {
@@ -117,16 +137,26 @@ export default function ServerDetailPage() {
                 const { data } = await serversApi.console(serverId);
                 if (data?.logs && Array.isArray(data.logs)) {
                     setConsoleLogs(data.logs);
+                    setConsoleConnected(true);
                 } else if (data?.token) {
-                    // WebSocket token available - show connection info
+                    setConsoleConnected(true);
                     setConsoleLogs((prev) => prev.length === 0 ? ['[Console connected - use commands below]'] : prev);
                 }
-            } catch { }
+            } catch {
+                setConsoleConnected(false);
+            }
         };
         fetchConsole();
         const interval = setInterval(fetchConsole, 5000);
         return () => clearInterval(interval);
     }, [tab, server?.pteroUuid, serverId]);
+
+    // Auto-scroll console when new logs arrive
+    useEffect(() => {
+        if (consoleAutoScroll && consoleRef.current) {
+            consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
+        }
+    }, [consoleLogs, consoleAutoScroll]);
 
     const openFile = async (file: any) => {
         if (!file.is_file) return loadFiles(`${currentDir}/${file.name}`.replace('//', '/'));
@@ -199,14 +229,23 @@ export default function ServerDetailPage() {
                     break;
                 }
                 case 'players': {
-                    const [w, b, o] = await Promise.all([
-                        playersApi.whitelist(server.pteroUuid),
-                        playersApi.banned(server.pteroUuid),
-                        playersApi.ops(server.pteroUuid),
-                    ]);
-                    setWhitelist(w.data || []);
-                    setBanned(b.data || []);
-                    setOps(o.data || []);
+                    setPlayersRefreshing(true);
+                    try {
+                        const [w, b, o] = await Promise.all([
+                            playersApi.whitelist(server.pteroUuid),
+                            playersApi.banned(server.pteroUuid),
+                            playersApi.ops(server.pteroUuid),
+                        ]);
+                        setWhitelist(w.data || []);
+                        setBanned(b.data || []);
+                        setOps(o.data || []);
+                        // Fetch online players in background (reads log file, may be slow)
+                        playersApi.online(server.pteroUuid).then((r) => {
+                            setOnlinePlayers(r.data || { count: 0, max: 0, players: [] });
+                        }).catch(() => { });
+                    } finally {
+                        setPlayersRefreshing(false);
+                    }
                     break;
                 }
             }
@@ -328,19 +367,47 @@ export default function ServerDetailPage() {
         } catch { toast.error('Failed to create folder'); }
     };
 
-    const playerAction = async (action: string) => {
-        if (!playerInput.trim() || !server?.pteroUuid) return;
+    const playerAction = async (action: string, targetPlayer?: string, reason?: string) => {
+        const name = targetPlayer || playerInput.trim();
+        if (!name || !server?.pteroUuid) return;
+        setPlayerActionLoading(true);
         try {
             switch (action) {
-                case 'whitelist': await playersApi.addWhitelist(server.pteroUuid, playerInput); break;
-                case 'ban': await playersApi.ban(server.pteroUuid, playerInput); break;
-                case 'op': await playersApi.op(server.pteroUuid, playerInput); break;
-                case 'kick': await playersApi.kick(server.pteroUuid, playerInput); break;
+                case 'whitelist': await playersApi.addWhitelist(server.pteroUuid, name); break;
+                case 'ban': await playersApi.ban(server.pteroUuid, name, reason); break;
+                case 'op': await playersApi.op(server.pteroUuid, name); break;
+                case 'kick': await playersApi.kick(server.pteroUuid, name, reason); break;
             }
-            toast.success(`${action} ${playerInput}`);
+            toast.success(`${action.charAt(0).toUpperCase() + action.slice(1)}: ${name}`);
             setPlayerInput('');
-            loadTabData('players');
-        } catch { toast.error('Action failed'); }
+            setBanModal(null);
+            setKickModal(null);
+            // Reload player lists
+            const [w, b, o] = await Promise.all([
+                playersApi.whitelist(server.pteroUuid),
+                playersApi.banned(server.pteroUuid),
+                playersApi.ops(server.pteroUuid),
+            ]);
+            setWhitelist(w.data || []);
+            setBanned(b.data || []);
+            setOps(o.data || []);
+        } catch (e: any) {
+            toast.error(e?.response?.data?.message || `${action} failed`);
+        } finally {
+            setPlayerActionLoading(false);
+        }
+    };
+
+    const openBanModal = () => {
+        const name = playerInput.trim();
+        if (!name) return toast.error('Enter a player name first');
+        setBanModal({ player: name, reason: '' });
+    };
+
+    const openKickModal = () => {
+        const name = playerInput.trim();
+        if (!name) return toast.error('Enter a player name first');
+        setKickModal({ player: name, reason: '' });
     };
 
     if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
@@ -352,12 +419,15 @@ export default function ServerDetailPage() {
         <div className="relative">
             {/* Suspension Overlay */}
             {isSuspended && (
-                <div className="fixed inset-0 z-40 bg-dark/80 backdrop-blur-sm flex items-center justify-center">
+                <div className="absolute inset-0 z-40 bg-dark/80 backdrop-blur-sm flex items-center justify-center rounded-xl">
                     <div className="glass-card p-8 max-w-md text-center">
                         <AlertTriangle className="w-16 h-16 text-orange-400 mx-auto mb-4" />
                         <h2 className="text-2xl font-bold mb-2">Server Suspended</h2>
                         <p className="text-gray-400 mb-4">This server has been suspended due to payment issues. Please renew to restore access.</p>
-                        <a href="/dashboard/billing" className="btn-primary">Go to Billing</a>
+                        <div className="flex gap-3 justify-center">
+                            <button onClick={() => router.back()} className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">Go Back</button>
+                            <a href="/dashboard/billing" className="btn-primary">Go to Billing</a>
+                        </div>
                     </div>
                 </div>
             )}
@@ -365,10 +435,28 @@ export default function ServerDetailPage() {
             {/* Header */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
                 <div>
-                    <h1 className="text-2xl font-display font-bold">{server.name}</h1>
-                    <p className="text-sm text-gray-400 mt-1">
-                        {server.ram}MB RAM · {server.cpu}% CPU · {server.disk}MB Disk
-                    </p>
+                    <div className="flex items-center gap-3 mb-1">
+                        <h1 className="text-2xl font-display font-bold">{server.name}</h1>
+                        {serverSoftware && serverSoftware.software !== 'unknown' && (
+                            <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex items-center gap-1.5 ${
+                                serverSoftware.software === 'paper' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
+                                serverSoftware.software === 'spigot' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' :
+                                serverSoftware.software === 'fabric' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
+                                serverSoftware.software === 'forge' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                                serverSoftware.software === 'velocity' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                                'bg-white/10 text-gray-300 border border-white/10'
+                            }`}>
+                                <FileCode className="w-3 h-3" />
+                                {serverSoftware.software.charAt(0).toUpperCase() + serverSoftware.software.slice(1)}
+                                <span className="text-[10px] opacity-60">({serverSoftware.type})</span>
+                            </span>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-4 text-sm text-gray-400">
+                        <span className="flex items-center gap-1"><MemoryStick className="w-3.5 h-3.5" /> {server.ram}MB</span>
+                        <span className="flex items-center gap-1"><Cpu className="w-3.5 h-3.5" /> {server.cpu}%</span>
+                        <span className="flex items-center gap-1"><HardDrive className="w-3.5 h-3.5" /> {server.disk}MB</span>
+                    </div>
                 </div>
                 <div className="flex gap-2 flex-wrap">
                     <button onClick={() => powerAction('start')} className="p-2.5 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors" title="Start"><Play className="w-5 h-5" /></button>
@@ -402,31 +490,94 @@ export default function ServerDetailPage() {
                 {/* Console */}
                 {tab === 'console' && (
                     <div>
-                        <div ref={consoleRef} className="bg-black/50 rounded-xl p-4 h-80 overflow-y-auto mb-4 font-mono text-sm">
+                        {/* Console Header Bar */}
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                                <div className={`w-2 h-2 rounded-full ${consoleConnected ? 'bg-green-400 shadow-lg shadow-green-400/40' : 'bg-red-400'}`} />
+                                <span className="text-xs text-gray-400">{consoleConnected ? 'Connected' : 'Disconnected'}</span>
+                                <span className="text-xs text-gray-600">· Polling every 5s</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <button
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(consoleLogs.join('\n'));
+                                        toast.success('Console copied to clipboard');
+                                    }}
+                                    className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors"
+                                    title="Copy console"
+                                >
+                                    <Copy className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                    onClick={() => setConsoleLogs([])}
+                                    className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors"
+                                    title="Clear console"
+                                >
+                                    <Eraser className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                    onClick={() => setConsoleAutoScroll(!consoleAutoScroll)}
+                                    className={`p-1.5 rounded-lg transition-colors ${consoleAutoScroll ? 'text-primary bg-primary/10' : 'text-gray-500 hover:text-white hover:bg-white/10'}`}
+                                    title={consoleAutoScroll ? 'Auto-scroll ON' : 'Auto-scroll OFF'}
+                                >
+                                    <ArrowLeft className="w-3.5 h-3.5 rotate-[-90deg]" />
+                                </button>
+                            </div>
+                        </div>
+                        <div
+                            ref={consoleRef}
+                            className="bg-black/60 rounded-xl p-4 h-[400px] overflow-y-auto mb-4 font-mono text-xs leading-relaxed border border-white/5"
+                            onScroll={() => {
+                                if (!consoleRef.current) return;
+                                const { scrollTop, scrollHeight, clientHeight } = consoleRef.current;
+                                setConsoleAutoScroll(scrollHeight - scrollTop - clientHeight < 50);
+                            }}
+                        >
                             {consoleLogs.length === 0 ? (
-                                <div className="text-gray-500">
-                                    <p>Waiting for console output...</p>
-                                    <p className="text-xs mt-2 text-gray-600">Console polls every 5 seconds. Use commands below to interact.</p>
+                                <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                                    <Terminal className="w-10 h-10 mb-3 opacity-30" />
+                                    <p className="text-sm">Waiting for console output...</p>
+                                    <p className="text-xs mt-1 text-gray-600">Console polls every 5 seconds. Use commands below to interact.</p>
                                 </div>
                             ) : (
-                                consoleLogs.map((line, i) => (
-                                    <p key={i} className={`leading-relaxed whitespace-pre-wrap break-all ${line.startsWith('>') ? 'text-primary' : line.includes('ERROR') || line.includes('WARN') ? 'text-orange-400' : 'text-green-400'}`}>
-                                        {line}
-                                    </p>
-                                ))
+                                consoleLogs.map((line, i) => {
+                                    // Strip ANSI escape codes for clean display
+                                    const clean = line.replace(/\x1b\[[0-9;]*m/g, '');
+                                    const isCmd = clean.startsWith('>');
+                                    const isError = /\b(ERROR|SEVERE|FATAL)\b/i.test(clean);
+                                    const isWarn = /\b(WARN|WARNING)\b/i.test(clean);
+                                    const isInfo = /\b(INFO)\b/i.test(clean);
+                                    return (
+                                        <p key={i} className={`whitespace-pre-wrap break-all py-px ${
+                                            isCmd ? 'text-primary font-medium' :
+                                            isError ? 'text-red-400' :
+                                            isWarn ? 'text-orange-400' :
+                                            isInfo ? 'text-green-400/80' :
+                                            'text-gray-300'
+                                        }`}>
+                                            {clean}
+                                        </p>
+                                    );
+                                })
                             )}
                         </div>
                         <div className="flex gap-2">
-                            <input
-                                type="text"
-                                value={command}
-                                onChange={(e) => setCommand(e.target.value)}
-                                onKeyDown={handleCommandKeyDown}
-                                placeholder="Type a command... (↑/↓ for history)"
-                                className="input-field flex-1 font-mono"
-                            />
+                            <div className="relative flex-1">
+                                <Terminal className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                                <input
+                                    type="text"
+                                    value={command}
+                                    onChange={(e) => setCommand(e.target.value)}
+                                    onKeyDown={handleCommandKeyDown}
+                                    placeholder="Type a command... (↑/↓ for history)"
+                                    className="input-field w-full pl-10 font-mono text-sm"
+                                />
+                            </div>
                             <button onClick={sendCommand} className="btn-primary px-6">Send</button>
                         </div>
+                        {commandHistory.length > 0 && (
+                            <p className="text-xs text-gray-600 mt-2">History: {commandHistory.length} command{commandHistory.length !== 1 ? 's' : ''}</p>
+                        )}
                     </div>
                 )}
 
@@ -546,7 +697,7 @@ export default function ServerDetailPage() {
                 {/* Backups */}
                 {tab === 'backups' && (
                     <div>
-                        <button onClick={async () => { await serversApi.createBackup(serverId); loadTabData('backups'); toast.success('Backup created'); }} className="btn-primary mb-4">Create Backup</button>
+                        <button onClick={async () => { try { await serversApi.createBackup(serverId); toast.success('Backup created'); loadTabData('backups'); } catch (e: any) { toast.error(e?.response?.data?.message || 'Failed to create backup'); } }} className="btn-primary mb-4">Create Backup</button>
                         <div className="space-y-3">
                             {backups.map((b: any, i: number) => (
                                 <div key={i} className="flex items-center gap-4 p-4 rounded-lg bg-white/5">
@@ -618,6 +769,77 @@ export default function ServerDetailPage() {
                 {/* Plugins */}
                 {tab === 'plugins' && (
                     <div>
+                        {/* Server Software Info */}
+                        {serverSoftware && (
+                            <div className="flex items-center gap-3 mb-4 p-3 rounded-xl bg-white/5 border border-white/10">
+                                <Info className="w-4 h-4 text-primary flex-shrink-0" />
+                                <span className="text-sm text-gray-400">
+                                    Detected server software: <strong className="text-white">{serverSoftware.software !== 'unknown' ? serverSoftware.software.charAt(0).toUpperCase() + serverSoftware.software.slice(1) : 'Unknown'}</strong>
+                                    {serverSoftware.software !== 'unknown' && (
+                                        <span className="text-gray-500"> — installing to <code className="text-primary/80 bg-primary/5 px-1 py-0.5 rounded text-xs">/{serverSoftware.type === 'mod' ? 'mods' : 'plugins'}/</code></span>
+                                    )}
+                                </span>
+                            </div>
+                        )}
+
+                        {/* Installed plugins (show at top for visibility) */}
+                        {installedPlugins.length > 0 && (
+                            <div className="mb-6">
+                                <div className="flex items-center justify-between mb-3">
+                                    <h3 className="font-semibold flex items-center gap-2">
+                                        <Puzzle className="w-4 h-4 text-green-400" />
+                                        Installed ({installedPlugins.length})
+                                    </h3>
+                                    <button
+                                        onClick={async () => {
+                                            if (!server?.pteroUuid) return;
+                                            setCheckingUpdates(true);
+                                            try {
+                                                const { data } = await pluginsApi.checkUpdates(server.pteroUuid);
+                                                setPluginUpdates(data || []);
+                                                toast.success(`Found info for ${(data || []).length} plugins`);
+                                            } catch { toast.error('Failed to check updates'); }
+                                            finally { setCheckingUpdates(false); }
+                                        }}
+                                        disabled={checkingUpdates}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
+                                    >
+                                        {checkingUpdates ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                                        {checkingUpdates ? 'Checking...' : 'Check Updates'}
+                                    </button>
+                                </div>
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                    {installedPlugins.map((p: any, i: number) => {
+                                        const update = pluginUpdates.find((u: any) => u.fileName === p.name);
+                                        return (
+                                        <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-white/5 border border-white/10 group">
+                                            {update?.iconUrl ? (
+                                                <img src={update.iconUrl} alt="" className="w-8 h-8 rounded-lg object-cover" />
+                                            ) : (
+                                                <Puzzle className="w-4 h-4 text-green-400 flex-shrink-0" />
+                                            )}
+                                            <div className="flex-1 min-w-0">
+                                                <span className="text-sm font-medium truncate block">{update?.title || p.name}</span>
+                                                <span className="text-xs text-gray-500">
+                                                    {(p.size / 1024).toFixed(0)}KB
+                                                    {update?.downloads && <span className="ml-2">{update.downloads.toLocaleString()} downloads</span>}
+                                                    {update?.source && <span className="ml-1 text-gray-600">· {update.source}</span>}
+                                                </span>
+                                            </div>
+                                            <button onClick={() => removePlugin(p.name)}
+                                                className="p-1.5 rounded text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors opacity-0 group-hover:opacity-100" title="Remove">
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Divider if installed plugins shown */}
+                        {installedPlugins.length > 0 && <div className="border-t border-white/10 mb-6" />}
+
                         {/* Source Tabs */}
                         <div className="flex gap-2 mb-4">
                             <button onClick={() => { setPluginSource('modrinth'); setPluginResults([]); setSelectedProject(null); }}
@@ -716,23 +938,21 @@ export default function ServerDetailPage() {
                             )}
                         </div>
 
-                        {/* Installed plugins */}
-                        {installedPlugins.length > 0 && (
-                            <div className="mt-6 pt-6 border-t border-white/10">
-                                <h3 className="font-semibold mb-3">Installed ({installedPlugins.length})</h3>
-                                <div className="space-y-2">
-                                    {installedPlugins.map((p: any, i: number) => (
-                                        <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-white/5 group">
-                                            <Puzzle className="w-4 h-4 text-green-400" />
-                                            <span className="text-sm flex-1">{p.name}</span>
-                                            <span className="text-xs text-gray-500">{(p.size / 1024).toFixed(0)}KB</span>
-                                            <button onClick={() => removePlugin(p.name)}
-                                                className="p-1.5 rounded text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors opacity-0 group-hover:opacity-100" title="Remove">
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
+                        {/* No search results state */}
+                        {pluginSearch.trim() && pluginResults.length === 0 && (
+                            <div className="text-center py-8">
+                                <Search className="w-8 h-8 mx-auto mb-2 text-gray-600" />
+                                <p className="text-gray-500 text-sm">No results found for &quot;{pluginSearch}&quot;</p>
+                                <p className="text-xs text-gray-600 mt-1">Try different keywords or switch to {pluginSource === 'modrinth' ? 'SpigotMC' : 'Modrinth'}</p>
+                            </div>
+                        )}
+
+                        {/* Initial state when no search */}
+                        {!pluginSearch.trim() && pluginResults.length === 0 && installedPlugins.length === 0 && (
+                            <div className="text-center py-12">
+                                <Puzzle className="w-12 h-12 mx-auto mb-3 text-gray-600 opacity-50" />
+                                <p className="text-gray-400 font-medium">Search for plugins to install</p>
+                                <p className="text-sm text-gray-600 mt-1">Browse thousands of {serverSoftware?.type === 'mod' ? 'mods' : 'plugins'} from Modrinth and SpigotMC</p>
                             </div>
                         )}
                     </div>
@@ -740,65 +960,324 @@ export default function ServerDetailPage() {
 
                 {/* Players */}
                 {tab === 'players' && (
-                    <div>
-                        <div className="flex gap-2 mb-6 flex-wrap">
-                            <input value={playerInput} onChange={(e) => setPlayerInput(e.target.value)}
-                                placeholder="Player name..." className="input-field flex-1 min-w-[200px]"
-                                onKeyDown={(e) => e.key === 'Enter' && playerAction('whitelist')} />
-                            <button onClick={() => playerAction('whitelist')} className="btn-secondary text-sm px-3">Whitelist</button>
-                            <button onClick={() => playerAction('op')} className="btn-secondary text-sm px-3">OP</button>
-                            <button onClick={() => playerAction('ban')} className="btn-danger text-sm px-3">Ban</button>
-                            <button onClick={() => playerAction('kick')} className="btn-danger text-sm px-3">Kick</button>
+                    <div className="space-y-6">
+                        {/* Ban Modal */}
+                        {banModal && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setBanModal(null)}>
+                                <div className="glass-card p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-lg font-semibold flex items-center gap-2">
+                                            <UserX className="w-5 h-5 text-red-400" /> Ban Player
+                                        </h3>
+                                        <button onClick={() => setBanModal(null)} className="p-1 rounded hover:bg-white/10 transition-colors">
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                    <div className="flex items-center gap-3 mb-4 p-3 rounded-lg bg-white/5">
+                                        <img src={`https://mc-heads.net/avatar/${banModal.player}/32`} alt="" className="w-8 h-8 rounded" />
+                                        <span className="font-medium">{banModal.player}</span>
+                                    </div>
+                                    <label className="text-sm text-gray-400 mb-1 block">Ban Reason (optional)</label>
+                                    <input
+                                        value={banModal.reason}
+                                        onChange={(e) => setBanModal({ ...banModal, reason: e.target.value })}
+                                        placeholder="e.g. Griefing, Hacking..."
+                                        className="input-field w-full mb-4"
+                                        onKeyDown={(e) => e.key === 'Enter' && playerAction('ban', banModal.player, banModal.reason)}
+                                        autoFocus
+                                    />
+                                    <div className="flex gap-2 justify-end">
+                                        <button onClick={() => setBanModal(null)} className="btn-secondary text-sm px-4">Cancel</button>
+                                        <button
+                                            onClick={() => playerAction('ban', banModal.player, banModal.reason)}
+                                            disabled={playerActionLoading}
+                                            className="px-4 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors text-sm font-medium disabled:opacity-50 flex items-center gap-2"
+                                        >
+                                            {playerActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserX className="w-4 h-4" />}
+                                            Ban Player
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Kick Modal */}
+                        {kickModal && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setKickModal(null)}>
+                                <div className="glass-card p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-lg font-semibold flex items-center gap-2">
+                                            <LogOut className="w-5 h-5 text-orange-400" /> Kick Player
+                                        </h3>
+                                        <button onClick={() => setKickModal(null)} className="p-1 rounded hover:bg-white/10 transition-colors">
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                    <div className="flex items-center gap-3 mb-4 p-3 rounded-lg bg-white/5">
+                                        <img src={`https://mc-heads.net/avatar/${kickModal.player}/32`} alt="" className="w-8 h-8 rounded" />
+                                        <span className="font-medium">{kickModal.player}</span>
+                                    </div>
+                                    <label className="text-sm text-gray-400 mb-1 block">Kick Reason (optional)</label>
+                                    <input
+                                        value={kickModal.reason}
+                                        onChange={(e) => setKickModal({ ...kickModal, reason: e.target.value })}
+                                        placeholder="e.g. AFK, Breaking rules..."
+                                        className="input-field w-full mb-4"
+                                        onKeyDown={(e) => e.key === 'Enter' && playerAction('kick', kickModal.player, kickModal.reason)}
+                                        autoFocus
+                                    />
+                                    <div className="flex gap-2 justify-end">
+                                        <button onClick={() => setKickModal(null)} className="btn-secondary text-sm px-4">Cancel</button>
+                                        <button
+                                            onClick={() => playerAction('kick', kickModal.player, kickModal.reason)}
+                                            disabled={playerActionLoading}
+                                            className="px-4 py-2 rounded-lg bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 transition-colors text-sm font-medium disabled:opacity-50 flex items-center gap-2"
+                                        >
+                                            {playerActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
+                                            Kick Player
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Online Players Section */}
+                        <div className="rounded-xl bg-white/5 border border-white/10 p-4">
+                            <div className="flex items-center justify-between mb-3">
+                                <h3 className="flex items-center gap-2 font-semibold">
+                                    {onlinePlayers.count > 0 ? <Wifi className="w-4 h-4 text-green-400" /> : <WifiOff className="w-4 h-4 text-gray-500" />}
+                                    Online Players
+                                    {onlinePlayers.max > 0 && (
+                                        <span className="text-sm font-normal text-gray-400">({onlinePlayers.count}/{onlinePlayers.max})</span>
+                                    )}
+                                </h3>
+                                <button
+                                    onClick={() => {
+                                        if (!server?.pteroUuid) return;
+                                        playersApi.online(server.pteroUuid).then((r) => {
+                                            setOnlinePlayers(r.data || { count: 0, max: 0, players: [] });
+                                            toast.success('Refreshed online players');
+                                        }).catch(() => toast.error('Failed to fetch online players'));
+                                    }}
+                                    className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                                    title="Refresh online players"
+                                >
+                                    <RefreshCw className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                            {onlinePlayers.players.length > 0 ? (
+                                <div className="flex flex-wrap gap-2">
+                                    {onlinePlayers.players.map((name) => (
+                                        <div key={name} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-500/10 border border-green-500/20">
+                                            <img src={`https://mc-heads.net/avatar/${name}/24`} alt="" className="w-6 h-6 rounded" />
+                                            <span className="text-sm font-medium text-green-300">{name}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-sm text-gray-500">No players online or server is offline. Click refresh to check.</p>
+                            )}
                         </div>
+
+                        {/* Player Actions Bar */}
+                        <div className="rounded-xl bg-white/5 border border-white/10 p-4">
+                            <h3 className="flex items-center gap-2 font-semibold mb-3">
+                                <UserPlus className="w-4 h-4 text-primary" />
+                                Player Actions
+                            </h3>
+                            <div className="flex gap-2 flex-wrap">
+                                <div className="relative flex-1 min-w-[200px]">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                                    <input
+                                        value={playerInput}
+                                        onChange={(e) => setPlayerInput(e.target.value)}
+                                        placeholder="Enter player name..."
+                                        className="input-field w-full pl-10"
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && playerInput.trim()) playerAction('whitelist');
+                                        }}
+                                        disabled={playerActionLoading}
+                                    />
+                                </div>
+                                <button
+                                    onClick={() => playerAction('whitelist')}
+                                    disabled={playerActionLoading || !playerInput.trim()}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors text-sm font-medium disabled:opacity-50"
+                                >
+                                    <Shield className="w-4 h-4" /> Whitelist
+                                </button>
+                                <button
+                                    onClick={() => playerAction('op')}
+                                    disabled={playerActionLoading || !playerInput.trim()}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 border border-yellow-500/20 transition-colors text-sm font-medium disabled:opacity-50"
+                                >
+                                    <Star className="w-4 h-4" /> OP
+                                </button>
+                                <button
+                                    onClick={openBanModal}
+                                    disabled={playerActionLoading || !playerInput.trim()}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 transition-colors text-sm font-medium disabled:opacity-50"
+                                >
+                                    <UserX className="w-4 h-4" /> Ban
+                                </button>
+                                <button
+                                    onClick={openKickModal}
+                                    disabled={playerActionLoading || !playerInput.trim()}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 border border-orange-500/20 transition-colors text-sm font-medium disabled:opacity-50"
+                                >
+                                    <LogOut className="w-4 h-4" /> Kick
+                                </button>
+                            </div>
+                            {playerActionLoading && (
+                                <div className="flex items-center gap-2 mt-3 text-sm text-gray-400">
+                                    <Loader2 className="w-4 h-4 animate-spin" /> Processing...
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Player Lists Grid */}
                         <div className="grid md:grid-cols-3 gap-4">
-                            <div>
-                                <h4 className="text-sm font-medium text-gray-400 mb-2">Whitelist ({whitelist.length})</h4>
-                                {whitelist.map((p: any, i: number) => (
-                                    <div key={i} className="flex items-center justify-between text-sm p-2 rounded bg-white/5 mb-1 group">
-                                        <span>{p.name || JSON.stringify(p)}</span>
-                                        <button onClick={async () => {
-                                            await playersApi.removeWhitelist(server.pteroUuid, p.name);
-                                            toast.success(`Removed ${p.name}`);
-                                            loadTabData('players');
-                                        }} className="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all" title="Remove">
-                                            <Trash2 className="w-3 h-3" />
-                                        </button>
-                                    </div>
-                                ))}
-                                {whitelist.length === 0 && <p className="text-xs text-gray-600">Empty</p>}
+                            {/* Whitelist */}
+                            <div className="rounded-xl bg-white/5 border border-white/10 overflow-hidden">
+                                <div className="flex items-center justify-between px-4 py-3 bg-blue-500/5 border-b border-white/10">
+                                    <h4 className="flex items-center gap-2 text-sm font-semibold">
+                                        <Shield className="w-4 h-4 text-blue-400" />
+                                        <span>Whitelist</span>
+                                        <span className="text-xs font-normal text-gray-500 bg-white/5 px-1.5 py-0.5 rounded">{whitelist.length}</span>
+                                    </h4>
+                                    {playersRefreshing && <Loader2 className="w-3 h-3 animate-spin text-gray-500" />}
+                                </div>
+                                <div className="p-2 max-h-64 overflow-y-auto">
+                                    {whitelist.map((p: any, i: number) => (
+                                        <div key={i} className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors group">
+                                            <img src={`https://mc-heads.net/avatar/${p.name}/24`} alt="" className="w-6 h-6 rounded flex-shrink-0" />
+                                            <span className="text-sm flex-1 truncate">{p.name || JSON.stringify(p)}</span>
+                                            <button
+                                                onClick={async () => {
+                                                    try {
+                                                        await playersApi.removeWhitelist(server.pteroUuid, p.name);
+                                                        toast.success(`Removed ${p.name} from whitelist`);
+                                                        setWhitelist((prev) => prev.filter((_, idx) => idx !== i));
+                                                    } catch { toast.error(`Failed to remove ${p.name}`); }
+                                                }}
+                                                className="p-1 rounded text-gray-600 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
+                                                title="Remove from whitelist"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                    {whitelist.length === 0 && (
+                                        <div className="flex flex-col items-center py-6 text-gray-600">
+                                            <Shield className="w-8 h-8 mb-2 opacity-30" />
+                                            <span className="text-xs">No whitelisted players</span>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                            <div>
-                                <h4 className="text-sm font-medium text-gray-400 mb-2">Operators ({ops.length})</h4>
-                                {ops.map((p: any, i: number) => (
-                                    <div key={i} className="flex items-center justify-between text-sm p-2 rounded bg-white/5 mb-1 group">
-                                        <span>{p.name || JSON.stringify(p)}</span>
-                                        <button onClick={async () => {
-                                            await playersApi.deop(server.pteroUuid, p.name);
-                                            toast.success(`Deop ${p.name}`);
-                                            loadTabData('players');
-                                        }} className="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all" title="Deop">
-                                            <Trash2 className="w-3 h-3" />
-                                        </button>
-                                    </div>
-                                ))}
-                                {ops.length === 0 && <p className="text-xs text-gray-600">Empty</p>}
+
+                            {/* Operators */}
+                            <div className="rounded-xl bg-white/5 border border-white/10 overflow-hidden">
+                                <div className="flex items-center justify-between px-4 py-3 bg-yellow-500/5 border-b border-white/10">
+                                    <h4 className="flex items-center gap-2 text-sm font-semibold">
+                                        <Star className="w-4 h-4 text-yellow-400" />
+                                        <span>Operators</span>
+                                        <span className="text-xs font-normal text-gray-500 bg-white/5 px-1.5 py-0.5 rounded">{ops.length}</span>
+                                    </h4>
+                                    {playersRefreshing && <Loader2 className="w-3 h-3 animate-spin text-gray-500" />}
+                                </div>
+                                <div className="p-2 max-h-64 overflow-y-auto">
+                                    {ops.map((p: any, i: number) => (
+                                        <div key={i} className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors group">
+                                            <img src={`https://mc-heads.net/avatar/${p.name}/24`} alt="" className="w-6 h-6 rounded flex-shrink-0" />
+                                            <div className="flex-1 min-w-0">
+                                                <span className="text-sm truncate block">{p.name || JSON.stringify(p)}</span>
+                                                {p.level && <span className="text-xs text-yellow-500/60">Level {p.level}</span>}
+                                            </div>
+                                            <button
+                                                onClick={async () => {
+                                                    try {
+                                                        await playersApi.deop(server.pteroUuid, p.name);
+                                                        toast.success(`Removed OP from ${p.name}`);
+                                                        setOps((prev) => prev.filter((_, idx) => idx !== i));
+                                                    } catch { toast.error(`Failed to deop ${p.name}`); }
+                                                }}
+                                                className="p-1 rounded text-gray-600 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
+                                                title="Remove OP"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                    {ops.length === 0 && (
+                                        <div className="flex flex-col items-center py-6 text-gray-600">
+                                            <Star className="w-8 h-8 mb-2 opacity-30" />
+                                            <span className="text-xs">No operators</span>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                            <div>
-                                <h4 className="text-sm font-medium text-gray-400 mb-2">Banned ({banned.length})</h4>
-                                {banned.map((p: any, i: number) => (
-                                    <div key={i} className="flex items-center justify-between text-sm p-2 rounded bg-red-500/10 mb-1 group">
-                                        <span>{p.name || JSON.stringify(p)}</span>
-                                        <button onClick={async () => {
-                                            await playersApi.unban(server.pteroUuid, p.name);
-                                            toast.success(`Unbanned ${p.name}`);
-                                            loadTabData('players');
-                                        }} className="text-gray-600 hover:text-green-400 opacity-0 group-hover:opacity-100 transition-all" title="Unban">
-                                            <RefreshCw className="w-3 h-3" />
-                                        </button>
-                                    </div>
-                                ))}
-                                {banned.length === 0 && <p className="text-xs text-gray-600">Empty</p>}
+
+                            {/* Banned */}
+                            <div className="rounded-xl bg-white/5 border border-white/10 overflow-hidden">
+                                <div className="flex items-center justify-between px-4 py-3 bg-red-500/5 border-b border-white/10">
+                                    <h4 className="flex items-center gap-2 text-sm font-semibold">
+                                        <UserX className="w-4 h-4 text-red-400" />
+                                        <span>Banned</span>
+                                        <span className="text-xs font-normal text-gray-500 bg-white/5 px-1.5 py-0.5 rounded">{banned.length}</span>
+                                    </h4>
+                                    {playersRefreshing && <Loader2 className="w-3 h-3 animate-spin text-gray-500" />}
+                                </div>
+                                <div className="p-2 max-h-64 overflow-y-auto">
+                                    {banned.map((p: any, i: number) => (
+                                        <div key={i} className="flex items-center gap-3 p-2 rounded-lg hover:bg-red-500/5 transition-colors group">
+                                            <img src={`https://mc-heads.net/avatar/${p.name}/24`} alt="" className="w-6 h-6 rounded flex-shrink-0 opacity-60" />
+                                            <div className="flex-1 min-w-0">
+                                                <span className="text-sm truncate block text-red-300">{p.name || JSON.stringify(p)}</span>
+                                                {p.reason && p.reason !== 'Banned by an operator.' && (
+                                                    <span className="text-xs text-gray-500 flex items-center gap-1">
+                                                        <MessageSquare className="w-3 h-3" /> {p.reason}
+                                                    </span>
+                                                )}
+                                                {p.created && (
+                                                    <span className="text-xs text-gray-600">{new Date(p.created).toLocaleDateString()}</span>
+                                                )}
+                                            </div>
+                                            <button
+                                                onClick={async () => {
+                                                    try {
+                                                        await playersApi.unban(server.pteroUuid, p.name);
+                                                        toast.success(`Unbanned ${p.name}`);
+                                                        setBanned((prev) => prev.filter((_, idx) => idx !== i));
+                                                    } catch { toast.error(`Failed to unban ${p.name}`); }
+                                                }}
+                                                className="p-1.5 rounded text-gray-600 hover:text-green-400 hover:bg-green-500/10 opacity-0 group-hover:opacity-100 transition-all"
+                                                title="Unban player"
+                                            >
+                                                <RefreshCw className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                    {banned.length === 0 && (
+                                        <div className="flex flex-col items-center py-6 text-gray-600">
+                                            <UserX className="w-8 h-8 mb-2 opacity-30" />
+                                            <span className="text-xs">No banned players</span>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
+                        </div>
+
+                        {/* Refresh All */}
+                        <div className="flex justify-center">
+                            <button
+                                onClick={() => loadTabData('players')}
+                                disabled={playersRefreshing}
+                                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition-colors disabled:opacity-50"
+                            >
+                                <RefreshCw className={`w-4 h-4 ${playersRefreshing ? 'animate-spin' : ''}`} />
+                                Refresh All Lists
+                            </button>
                         </div>
                     </div>
                 )}

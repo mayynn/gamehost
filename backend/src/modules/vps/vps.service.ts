@@ -2,7 +2,7 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
-import { VpsStatus } from '@prisma/client';
+import { VpsStatus, PaymentGateway, PaymentStatus } from '@prisma/client';
 import axios, { AxiosInstance } from 'axios';
 
 @Injectable()
@@ -116,9 +116,9 @@ export class VpsService {
         await this.prisma.payment.create({
             data: {
                 userId,
-                gateway: 'BALANCE',
+                gateway: PaymentGateway.BALANCE,
                 amount: plan.sellPrice,
-                status: 'COMPLETED',
+                status: PaymentStatus.COMPLETED,
                 metadata: { type: 'vps_provision', planId: plan.id, planName: plan.datalixPlanName },
             },
         });
@@ -261,9 +261,9 @@ export class VpsService {
         await this.prisma.payment.create({
             data: {
                 userId,
-                gateway: 'BALANCE',
+                gateway: PaymentGateway.BALANCE,
                 amount: price,
-                status: 'COMPLETED',
+                status: PaymentStatus.COMPLETED,
                 metadata: { type: 'vps_renewal', vpsId },
             },
         });

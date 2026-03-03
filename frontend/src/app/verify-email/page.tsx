@@ -1,12 +1,24 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Check, X, Loader2, ArrowRight } from 'lucide-react';
 
 export default function VerifyEmailPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen bg-dark flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-primary animate-spin" />
+            </div>
+        }>
+            <VerifyEmailPageInner />
+        </Suspense>
+    );
+}
+
+function VerifyEmailPageInner() {
     const searchParams = useSearchParams();
     const token = searchParams.get('token');
     const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');

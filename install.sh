@@ -199,6 +199,121 @@ resolve_base_url() {
   return 0
 }
 
+# ── Pterodactyl Auto-Detection ─────────────────────────────
+# Checks common installation paths and Docker containers for
+# an existing Pterodactyl panel on the same machine.
+# Sets: PTERO_DETECTED (bool), PTERO_PANEL_URL, PTERO_PANEL_PATH, PTERO_DETECT_METHOD
+
+detect_pterodactyl() {
+  PTERO_DETECTED=false
+  PTERO_PANEL_URL=""
+  PTERO_PANEL_PATH=""
+  PTERO_DETECT_METHOD=""
+
+  # 1. Check common file-system paths
+  local COMMON_PATHS=(
+    "/var/www/pterodactyl"
+    "/opt/pterodactyl"
+    "/srv/pterodactyl"
+    "/var/www/pelican"
+  )
+
+  for p in "${COMMON_PATHS[@]}"; do
+    if [ -f "${p}/.env" ]; then
+      local url=$(grep -E '^APP_URL=' "${p}/.env" 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'" | sed 's/[[:space:]]*$//')
+      if [ -n "$url" ]; then
+        PTERO_DETECTED=true
+        PTERO_PANEL_URL="$url"
+        PTERO_PANEL_PATH="$p"
+        PTERO_DETECT_METHOD="filesystem (${p}/.env)"
+        return 0
+      fi
+    fi
+  done
+
+  # 2. Check running Docker containers (pterodactyl/panel image)
+  if command -v docker >/dev/null 2>&1; then
+    local container_url=$(docker ps --format '{{.Image}} {{.Ports}}' 2>/dev/null | grep -i 'pterodactyl\|pelican' | head -1 || true)
+    if [ -n "$container_url" ]; then
+      # Try to extract the panel URL from the container's env
+      local cname=$(docker ps --format '{{.Names}} {{.Image}}' 2>/dev/null | grep -i 'pterodactyl\|pelican' | head -1 | awk '{print $1}')
+      if [ -n "$cname" ]; then
+        local durl=$(docker exec "$cname" printenv APP_URL 2>/dev/null || true)
+        if [ -n "$durl" ]; then
+          PTERO_DETECTED=true
+          PTERO_PANEL_URL="$durl"
+          PTERO_PANEL_PATH="(Docker: ${cname})"
+          PTERO_DETECT_METHOD="docker container (${cname})"
+          return 0
+        fi
+      fi
+      # Even if we can't get URL, mark as detected
+      PTERO_DETECTED=true
+      PTERO_DETECT_METHOD="docker container (could not read APP_URL)"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+# ── Pterodactyl API Key Validation ─────────────────────────
+# Tests if a Pterodactyl API key is valid by making a request.
+# Usage: validate_ptero_key <url> <key> <type>
+#   type: "app" for Application API, "client" for Client API
+# Returns: 0 if valid, 1 if invalid. Sets PTERO_KEY_STATUS with message.
+
+validate_ptero_key() {
+  local url="$1" key="$2" type="$3"
+  PTERO_KEY_STATUS=""
+
+  if ! $HAS_CURL; then
+    PTERO_KEY_STATUS="skipped (curl not available)"
+    return 1
+  fi
+
+  if [ -z "$url" ] || [ -z "$key" ]; then
+    PTERO_KEY_STATUS="skipped (empty URL or key)"
+    return 1
+  fi
+
+  # Strip trailing slash from URL
+  url="${url%/}"
+
+  local endpoint=""
+  if [ "$type" = "app" ]; then
+    endpoint="${url}/api/application/servers?per_page=1"
+  else
+    endpoint="${url}/api/client"
+  fi
+
+  local http_code
+  http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+    -H "Authorization: Bearer ${key}" \
+    -H "Accept: application/json" \
+    -H "Content-Type: application/json" \
+    "$endpoint" 2>/dev/null || echo "000")
+
+  case "$http_code" in
+    200)
+      PTERO_KEY_STATUS="valid (HTTP 200)"
+      return 0
+      ;;
+    401|403)
+      PTERO_KEY_STATUS="invalid key (HTTP ${http_code})"
+      return 1
+      ;;
+    000)
+      PTERO_KEY_STATUS="connection failed (is ${url} reachable?)"
+      return 1
+      ;;
+    *)
+      PTERO_KEY_STATUS="unexpected response (HTTP ${http_code})"
+      return 1
+      ;;
+  esac
+}
+
 
 # ═══════════════════════════════════════════════════════════
 #                        BEGIN INSTALL
@@ -588,6 +703,83 @@ else
   echo -e "${GRAY}   │${NC}"
 fi
 
+# ── Pterodactyl Panel Auto-Detection ───────────────────────
+echo -e "${GRAY}   │${NC}"
+echo -e "${GRAY}   │${NC}  ${MAGENTA}${BOLD}── Pterodactyl Panel ──${NC}"
+
+detect_pterodactyl || true
+
+CURRENT_PTERO_URL=$(env_get .env PTERODACTYL_URL)
+CURRENT_PTERO_APP_KEY=$(env_get .env PTERODACTYL_APP_KEY)
+CURRENT_PTERO_CLIENT_KEY=$(env_get .env PTERODACTYL_CLIENT_KEY)
+
+if $PTERO_DETECTED; then
+  echo -e "${GRAY}   │${NC}  ${GREEN}${BOLD}✔ Pterodactyl panel detected!${NC}"
+  echo -e "${GRAY}   │${NC}  ${DIM}Found via: ${PTERO_DETECT_METHOD}${NC}"
+
+  # Auto-fill PTERODACTYL_URL if empty/default
+  if [[ -z "$CURRENT_PTERO_URL" || "$CURRENT_PTERO_URL" == "http://localhost"* || "$CURRENT_PTERO_URL" == "https://panel.example.com" ]] && [ -n "$PTERO_PANEL_URL" ]; then
+    env_set .env PTERODACTYL_URL "$PTERO_PANEL_URL"
+    CURRENT_PTERO_URL="$PTERO_PANEL_URL"
+    ok "PTERODACTYL_URL        ${GREEN}${BOLD}auto-filled${NC} → ${PTERO_PANEL_URL}"
+    ENV_UPDATED+=("PTERODACTYL_URL")
+  elif [ -n "$CURRENT_PTERO_URL" ]; then
+    ok "PTERODACTYL_URL        ${DIM}preserved${NC} → ${CURRENT_PTERO_URL}"
+  fi
+else
+  echo -e "${GRAY}   │${NC}  ${DIM}No local Pterodactyl panel detected${NC}"
+  echo -e "${GRAY}   │${NC}  ${DIM}(Checked: /var/www/pterodactyl, /opt/pterodactyl, /srv/pterodactyl, Docker)${NC}"
+  if [ -n "$CURRENT_PTERO_URL" ]; then
+    ok "PTERODACTYL_URL        ${DIM}preserved${NC} → ${CURRENT_PTERO_URL}"
+  else
+    echo -e "${GRAY}   │${NC}  ${YELLOW}Set PTERODACTYL_URL in .env to your panel URL${NC}"
+  fi
+fi
+
+# Show direct links to create API keys
+if [ -n "$CURRENT_PTERO_URL" ]; then
+  PTERO_URL_CLEAN="${CURRENT_PTERO_URL%/}"
+  echo -e "${GRAY}   │${NC}"
+  echo -e "${GRAY}   │${NC}  ${DIM}Create API keys here (2 clicks each):${NC}"
+  echo -e "${GRAY}   │${NC}  ${CYAN}Application Key${NC}  ${WHITE}${BOLD}${PTERO_URL_CLEAN}/admin/api${NC}"
+  echo -e "${GRAY}   │${NC}  ${DIM}                 → New Application API Key → Permissions: all Read & Write → Create${NC}"
+  echo -e "${GRAY}   │${NC}  ${CYAN}Client Key${NC}       ${WHITE}${BOLD}${PTERO_URL_CLEAN}/account/api${NC}"
+  echo -e "${GRAY}   │${NC}  ${DIM}                 → Create API Key → any description → Create${NC}"
+fi
+
+# Validate existing API keys
+if $HAS_CURL && [ -n "$CURRENT_PTERO_URL" ]; then
+  echo -e "${GRAY}   │${NC}"
+
+  if [ -n "$CURRENT_PTERO_APP_KEY" ]; then
+    echo -en "${GRAY}   │${NC}  ${DIM}Validating Application Key...${NC}\r"
+    if validate_ptero_key "$CURRENT_PTERO_URL" "$CURRENT_PTERO_APP_KEY" "app"; then
+      echo -e "${GRAY}   │${NC}  ${GREEN}✔ Application Key     ${GREEN}${BOLD}${PTERO_KEY_STATUS}${NC}          "
+    else
+      echo -e "${GRAY}   │${NC}  ${RED}✘ Application Key     ${RED}${BOLD}${PTERO_KEY_STATUS}${NC}          "
+      echo -e "${GRAY}   │${NC}  ${DIM}  Fix: ${PTERO_URL_CLEAN}/admin/api → Create new key → paste into .env${NC}"
+    fi
+  else
+    echo -e "${GRAY}   │${NC}  ${YELLOW}⚠ Application Key     ${YELLOW}not set${NC}"
+    echo -e "${GRAY}   │${NC}  ${DIM}  Set PTERODACTYL_APP_KEY in .env${NC}"
+  fi
+
+  if [ -n "$CURRENT_PTERO_CLIENT_KEY" ]; then
+    echo -en "${GRAY}   │${NC}  ${DIM}Validating Client Key...${NC}\r"
+    if validate_ptero_key "$CURRENT_PTERO_URL" "$CURRENT_PTERO_CLIENT_KEY" "client"; then
+      echo -e "${GRAY}   │${NC}  ${GREEN}✔ Client Key          ${GREEN}${BOLD}${PTERO_KEY_STATUS}${NC}          "
+    else
+      echo -e "${GRAY}   │${NC}  ${RED}✘ Client Key          ${RED}${BOLD}${PTERO_KEY_STATUS}${NC}          "
+      echo -e "${GRAY}   │${NC}  ${DIM}  Fix: ${PTERO_URL_CLEAN}/account/api → Create new key → paste into .env${NC}"
+    fi
+  else
+    echo -e "${GRAY}   │${NC}  ${YELLOW}⚠ Client Key          ${YELLOW}not set${NC}"
+    echo -e "${GRAY}   │${NC}  ${DIM}  Set PTERODACTYL_CLIENT_KEY in .env${NC}"
+  fi
+fi
+
+echo -e "${GRAY}   │${NC}"
+
 # ── Audit Summary ──────────────────────────────────────────
 echo -e "${GRAY}   │${NC}"
 echo -e "${GRAY}   │${NC}  ${MAGENTA}${BOLD}── Secret Audit Summary ──${NC}"
@@ -861,6 +1053,7 @@ warn_if_empty() {
 
 warn_if_empty "GOOGLE_CLIENT_ID"      "Google OAuth"
 warn_if_empty "DISCORD_CLIENT_ID"     "Discord OAuth"
+warn_if_empty "PTERODACTYL_URL"       "Pterodactyl Panel URL"
 warn_if_empty "PTERODACTYL_APP_KEY"   "Pterodactyl App Key"
 warn_if_empty "PTERODACTYL_CLIENT_KEY" "Pterodactyl Client Key"
 warn_if_empty "DISCORD_BOT_TOKEN"     "Discord Bot Token"
@@ -903,7 +1096,14 @@ echo -e "${GRAY}   ╠═══════════════════�
 echo -e "${GRAY}   ║${NC}                                                              ${GRAY}║${NC}"
 echo -e "${GRAY}   ║${NC}   ${WHITE}${BOLD}Next Steps${NC}                                                  ${GRAY}║${NC}"
 echo -e "${GRAY}   ║${NC}   ${DIM}1. Configure OAuth secrets in .env (client IDs/secrets)${NC}    ${GRAY}║${NC}"
-echo -e "${GRAY}   ║${NC}   ${DIM}2. Configure Pterodactyl keys in .env${NC}                      ${GRAY}║${NC}"
+if [ -n "$CURRENT_PTERO_URL" ] && [ -n "$CURRENT_PTERO_APP_KEY" ] && [ -n "$CURRENT_PTERO_CLIENT_KEY" ]; then
+echo -e "${GRAY}   ║${NC}   ${GREEN}2. Pterodactyl keys — configured ✔${NC}                        ${GRAY}║${NC}"
+else
+  PTERO_URL_HINT="${CURRENT_PTERO_URL:-your-panel-url}"
+echo -e "${GRAY}   ║${NC}   ${YELLOW}2. Create Pterodactyl API keys:${NC}                            ${GRAY}║${NC}"
+echo -e "${GRAY}   ║${NC}   ${DIM}   App key:    ${PTERO_URL_HINT}/admin/api${NC}${GRAY}║${NC}"
+echo -e "${GRAY}   ║${NC}   ${DIM}   Client key: ${PTERO_URL_HINT}/account/api${NC}${GRAY}║${NC}"
+fi
 echo -e "${GRAY}   ║${NC}   ${DIM}3. Configure SMTP in .env for email login (optional)${NC}       ${GRAY}║${NC}"
 echo -e "${GRAY}   ║${NC}   ${DIM}4. If VPS reselling: sync plans in Admin → VPS Plans${NC}       ${GRAY}║${NC}"
 echo -e "${GRAY}   ║${NC}   ${DIM}5. Restart: bash restart.sh${NC}                                ${GRAY}║${NC}"
@@ -930,4 +1130,33 @@ echo -e "${GRAY}   │${NC}  ${CYAN}Discord Portal${NC}  ${DIM}(https://discord.
 echo -e "${GRAY}   │${NC}  ${WHITE}${BOLD}→ ${DISCORD_REDIRECT}${NC}"
 echo -e "${GRAY}   │${NC}"
 echo -e "${GRAY}   └─────────────────────────────────────────────────────────────${NC}"
+
+# ── Pterodactyl Quick Reference ──────────────────────────
+if [ -n "$CURRENT_PTERO_URL" ]; then
+  PTERO_URL_CLEAN="${CURRENT_PTERO_URL%/}"
+  echo ""
+  echo -e "${GRAY}   ┌─────────────────────────────────────────────────────────────${NC}"
+  echo -e "${GRAY}   │${NC}  ${MAGENTA}${BOLD}🎮 Pterodactyl Panel — API Key Setup${NC}"
+  echo -e "${GRAY}   ├─────────────────────────────────────────────────────────────${NC}"
+  echo -e "${GRAY}   │${NC}"
+  echo -e "${GRAY}   │${NC}  ${CYAN}Panel URL${NC}        ${WHITE}${BOLD}${PTERO_URL_CLEAN}${NC}"
+  if $PTERO_DETECTED; then
+    echo -e "${GRAY}   │${NC}  ${GREEN}Detected via${NC}     ${DIM}${PTERO_DETECT_METHOD}${NC}"
+  fi
+  echo -e "${GRAY}   │${NC}"
+  echo -e "${GRAY}   │${NC}  ${CYAN}Application Key${NC}  ${WHITE}${BOLD}${PTERO_URL_CLEAN}/admin/api${NC}"
+  echo -e "${GRAY}   │${NC}  ${DIM}  → Click \"New Application API Key\"${NC}"
+  echo -e "${GRAY}   │${NC}  ${DIM}  → Set all permissions to Read & Write → Create${NC}"
+  echo -e "${GRAY}   │${NC}  ${DIM}  → Copy the key → paste as PTERODACTYL_APP_KEY in .env${NC}"
+  echo -e "${GRAY}   │${NC}"
+  echo -e "${GRAY}   │${NC}  ${CYAN}Client API Key${NC}   ${WHITE}${BOLD}${PTERO_URL_CLEAN}/account/api${NC}"
+  echo -e "${GRAY}   │${NC}  ${DIM}  → Click \"Create API Key\"${NC}"
+  echo -e "${GRAY}   │${NC}  ${DIM}  → Description: anything → Create${NC}"
+  echo -e "${GRAY}   │${NC}  ${DIM}  → Copy the key → paste as PTERODACTYL_CLIENT_KEY in .env${NC}"
+  echo -e "${GRAY}   │${NC}"
+  echo -e "${GRAY}   │${NC}  ${DIM}After adding keys, run: ${BOLD}bash restart.sh${NC}"
+  echo -e "${GRAY}   │${NC}"
+  echo -e "${GRAY}   └─────────────────────────────────────────────────────────────${NC}"
+fi
+
 echo ""

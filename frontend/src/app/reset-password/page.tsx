@@ -1,14 +1,26 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Lock, Eye, EyeOff, ArrowRight, Check, X, AlertCircle } from 'lucide-react';
+import { Lock, Eye, EyeOff, ArrowRight, Check, X, AlertCircle, Loader2 } from 'lucide-react';
 import { authApi } from '@/lib/api';
 import toast from 'react-hot-toast';
 
 export default function ResetPasswordPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen bg-dark flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-primary animate-spin" />
+            </div>
+        }>
+            <ResetPasswordPageInner />
+        </Suspense>
+    );
+}
+
+function ResetPasswordPageInner() {
     const searchParams = useSearchParams();
     const token = searchParams.get('token');
 

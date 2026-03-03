@@ -1,13 +1,38 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Controller('health')
-export class HealthController {
+export class HealthController implements OnModuleInit, OnModuleDestroy {
+    private redis: any = null;
+
     constructor(
         private prisma: PrismaService,
         private config: ConfigService,
     ) { }
+
+    async onModuleInit() {
+        const redisUrl = this.config.get('REDIS_URL');
+        if (redisUrl) {
+            try {
+                const Redis = require('ioredis');
+                this.redis = new Redis(redisUrl, {
+                    connectTimeout: 3000,
+                    lazyConnect: true,
+                    maxRetriesPerRequest: 1,
+                });
+                await this.redis.connect();
+            } catch {
+                this.redis = null;
+            }
+        }
+    }
+
+    async onModuleDestroy() {
+        if (this.redis) {
+            try { this.redis.disconnect(); } catch { }
+        }
+    }
 
     @Get()
     async check() {
@@ -21,21 +46,16 @@ export class HealthController {
             checks.database = 'disconnected';
         }
 
-        // Redis check
-        try {
-            const Redis = require('ioredis');
-            const redisUrl = this.config.get('REDIS_URL');
-            if (redisUrl) {
-                const redis = new Redis(redisUrl, { connectTimeout: 3000, lazyConnect: true });
-                await redis.connect();
-                await redis.ping();
+        // Redis check (uses singleton connection, no leak)
+        if (this.redis) {
+            try {
+                await this.redis.ping();
                 checks.redis = 'connected';
-                redis.disconnect();
-            } else {
-                checks.redis = 'not_configured';
+            } catch {
+                checks.redis = 'disconnected';
             }
-        } catch {
-            checks.redis = 'disconnected';
+        } else {
+            checks.redis = 'not_configured';
         }
 
         const allHealthy = Object.values(checks).every(v => v === 'connected' || v === 'not_configured');

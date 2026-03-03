@@ -1,0 +1,26 @@
+{
+    "name": "GameHost Platform",
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "features": {
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+        "ghcr.io/devcontainers/features/node:1": { "version": "20" }
+    },
+    "forwardPorts": [80, 443],
+    "portsAttributes": {
+        "80": { "label": "GameHost (HTTP)", "onAutoForward": "openBrowser" },
+        "443": { "label": "GameHost (HTTPS)", "onAutoForward": "ignore" },
+        "3000": { "label": "Frontend (internal)", "onAutoForward": "ignore" },
+        "4000": { "label": "Backend (internal)", "onAutoForward": "ignore" },
+        "5432": { "onAutoForward": "ignore" },
+        "6379": { "onAutoForward": "ignore" }
+    },
+    "postCreateCommand": "cp .env.example .env 2>/dev/null; echo 'Run: bash install.sh'",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-azuretools.vscode-docker",
+                "Prisma.prisma"
+            ]
+        }
+    }
+}

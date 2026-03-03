@@ -81,7 +81,7 @@ export default function BillingPage() {
                     toast.success('Cashfree session created. Complete payment in the popup.');
                 }
             }
-        } catch { toast.error('Payment creation failed'); }
+        } catch (e: any) { toast.error(e?.response?.data?.message || 'Payment creation failed'); }
         finally { setProcessing(false); }
     };
 
@@ -92,7 +92,7 @@ export default function BillingPage() {
             toast.success('UTR submitted for review');
             setUtrInput(''); setUpiAmount('');
             refreshData();
-        } catch { toast.error('Submission failed'); }
+        } catch (e: any) { toast.error(e?.response?.data?.message || 'Submission failed'); }
     };
 
     const statusIcon = (status: string) => {
@@ -108,6 +108,12 @@ export default function BillingPage() {
             <h1 className="text-2xl font-display font-bold mb-2">Billing</h1>
             <p className="text-gray-400 mb-8">Manage payments and add funds to your balance</p>
 
+            {loading ? (
+                <div className="flex items-center justify-center py-20">
+                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                </div>
+            ) : (
+            <>
             {/* Balance Card */}
             <div className="glass-card p-6 mb-6">
                 <div className="flex items-center justify-between mb-4">
@@ -171,6 +177,8 @@ export default function BillingPage() {
                     {payments.length === 0 && <p className="text-gray-500 text-center py-8">No payments yet</p>}
                 </div>
             </div>
+            </>
+            )}
         </div>
     );
 }

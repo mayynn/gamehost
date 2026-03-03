@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { plansApi } from '@/lib/api';
-import { Check, Zap, Sliders } from 'lucide-react';
+import { Check, Zap, Sliders, Loader2, PackageX } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 export default function PlansPage() {
     const [plans, setPlans] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
     const [showBuilder, setShowBuilder] = useState(false);
     const [ram, setRam] = useState(2048);
     const [cpu, setCpu] = useState(100);
@@ -16,20 +17,30 @@ export default function PlansPage() {
     const router = useRouter();
 
     useEffect(() => {
-        plansApi.list().then((r) => setPlans(r.data || [])).catch(() => { });
+        plansApi.list().then((r) => setPlans(r.data || [])).catch(() => { }).finally(() => setLoading(false));
     }, []);
 
-    const updateCustomPrice = async () => {
+    const updateCustomPrice = useCallback(async () => {
         const customPlan = plans.find((p) => p.type === 'CUSTOM');
         if (customPlan) {
-            const { data } = await plansApi.calculate({ planId: customPlan.id, ram, cpu, disk });
-            setCustomPrice(data?.price || 0);
+            try {
+                const { data } = await plansApi.calculate({ planId: customPlan.id, ram, cpu, disk });
+                setCustomPrice(data?.price || 0);
+            } catch { setCustomPrice(0); }
         }
-    };
+    }, [plans, ram, cpu, disk]);
 
-    useEffect(() => { if (showBuilder) updateCustomPrice(); }, [ram, cpu, disk, showBuilder]);
+    useEffect(() => { if (showBuilder) updateCustomPrice(); }, [showBuilder, updateCustomPrice]);
 
     const planColors = ['from-green-500 to-emerald-500', 'from-primary to-blue-500', 'from-accent to-purple-500', 'from-orange-500 to-red-500'];
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center py-20">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+        );
+    }
 
     return (
         <div>
@@ -39,6 +50,13 @@ export default function PlansPage() {
             </div>
 
             {/* Plans Grid */}
+            {plans.filter((p) => p.type !== 'CUSTOM').length === 0 ? (
+                <div className="glass-card p-16 text-center mb-8">
+                    <PackageX className="w-16 h-16 mx-auto mb-4 text-gray-600" />
+                    <h3 className="text-xl font-semibold mb-2">No plans available</h3>
+                    <p className="text-gray-400">Check back later — the admin hasn&apos;t created any plans yet.</p>
+                </div>
+            ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 {plans.filter((p) => p.type !== 'CUSTOM').map((plan, i) => (
                     <div key={plan.id} className="glass-card-hover p-6 flex flex-col">
@@ -61,6 +79,7 @@ export default function PlansPage() {
                     </div>
                 ))}
             </div>
+            )}
 
             {/* Custom Builder */}
             <div className="glass-card p-6">

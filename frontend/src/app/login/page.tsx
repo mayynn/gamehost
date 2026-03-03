@@ -1,14 +1,26 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Mail, Lock, Eye, EyeOff, AlertCircle, ArrowRight } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
 import { authApi } from '@/lib/api';
 import toast from 'react-hot-toast';
 
 export default function LoginPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen bg-dark flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-primary animate-spin" />
+            </div>
+        }>
+            <LoginPageInner />
+        </Suspense>
+    );
+}
+
+function LoginPageInner() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const error = searchParams.get('error');

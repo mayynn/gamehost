@@ -1,7 +1,9 @@
-import { Controller, Get, Post, Body, UseGuards, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Param, BadRequestException } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { BillingService } from './billing.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('billing')
@@ -21,8 +23,12 @@ export class BillingController {
     }
 
     @Post('balance/add')
-    @UseGuards(JwtAuthGuard)
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles('ADMIN')
     addBalance(@CurrentUser() user: any, @Body('amount') amount: number) {
+        if (!amount || amount <= 0 || amount > 100000) {
+            throw new BadRequestException('Amount must be between 1 and 100000');
+        }
         return this.billingService.addBalance(user.id, amount);
     }
 

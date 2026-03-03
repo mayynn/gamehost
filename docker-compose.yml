@@ -9,28 +9,54 @@ services:
       POSTGRES_DB: ${DB_NAME:-gamehost}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    # Bind to 127.0.0.1 — DB should NOT be accessible from the internet
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-gamehost}" ]
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   redis:
     image: redis:7-alpine
     container_name: gamehost-redis
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD:-gamehost_redis}
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-gamehost_redis}
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1000
+      --save 300 10
     volumes:
       - redisdata:/data
+    # Bind to 127.0.0.1 — Redis should NOT be accessible from the internet
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-gamehost_redis}", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
 
   backend:
     build:
@@ -46,12 +72,21 @@ services:
       # BACKEND_PORT in .env controls only the HOST-side mapping below.
       BACKEND_PORT: "4000"
     ports:
-      - "${BACKEND_PORT:-4000}:4000"
+      - "127.0.0.1:${BACKEND_PORT:-4000}:4000"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   frontend:
     build:
@@ -59,14 +94,24 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+        NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-GameHost}
     container_name: gamehost-frontend
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
     depends_on:
       - backend
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
 
   nginx:
     image: nginx:alpine
@@ -81,6 +126,15 @@ services:
     depends_on:
       - frontend
       - backend
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 volumes:
   pgdata:

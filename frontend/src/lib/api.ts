@@ -86,6 +86,7 @@ export const creditsApi = {
 export const pluginsApi = {
     detect: (uuid: string) => api.get(`/plugins/${uuid}/detect`),
     installed: (uuid: string) => api.get(`/plugins/${uuid}/installed`),
+    checkUpdates: (uuid: string) => api.get(`/plugins/${uuid}/check-updates`),
     remove: (uuid: string, file: string) => api.delete(`/plugins/${uuid}/remove/${encodeURIComponent(file)}`),
     modrinthSearch: (q: string, limit = 20, offset = 0) =>
         api.get(`/plugins/modrinth/search?query=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}`),
@@ -119,7 +120,7 @@ export const playersApi = {
     ops: (uuid: string) => api.get(`/players/${uuid}/ops`),
     op: (uuid: string, player: string) => api.post(`/players/${uuid}/op`, { player }),
     deop: (uuid: string, player: string) => api.post(`/players/${uuid}/deop`, { player }),
-    kick: (uuid: string, player: string) => api.post(`/players/${uuid}/kick`, { player }),
+    kick: (uuid: string, player: string, reason?: string) => api.post(`/players/${uuid}/kick`, { player, reason }),
 };
 
 // VPS
@@ -137,6 +138,8 @@ export const vpsApi = {
 export const usersApi = {
     profile: () => api.get('/users/profile'),
     updateProfile: (data: { name?: string }) => api.patch('/users/profile', data),
+    changePassword: (data: { currentPassword?: string; newPassword: string }) =>
+        api.post('/users/change-password', data),
 };
 
 // Admin
