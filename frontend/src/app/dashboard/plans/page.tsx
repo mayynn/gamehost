@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { plansApi } from '@/lib/api';
 import { Check, Zap, Sliders } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 export default function PlansPage() {
     const [plans, setPlans] = useState<any[]>([]);
@@ -12,6 +13,7 @@ export default function PlansPage() {
     const [cpu, setCpu] = useState(100);
     const [disk, setDisk] = useState(10240);
     const [customPrice, setCustomPrice] = useState(0);
+    const router = useRouter();
 
     useEffect(() => {
         plansApi.list().then((r) => setPlans(r.data || [])).catch(() => { });
@@ -53,8 +55,8 @@ export default function PlansPage() {
                             <li className="flex items-center gap-2 text-sm"><Check className="w-4 h-4 text-primary" />{plan.databases} Databases</li>
                             <li className="flex items-center gap-2 text-sm"><Check className="w-4 h-4 text-primary" />Plugin Installer</li>
                         </ul>
-                        <Link href={`/dashboard/billing?plan=${plan.id}`} className="btn-primary text-center w-full">
-                            {plan.type === 'FREE' ? 'Start Free' : 'Subscribe'}
+                        <Link href={`/dashboard/servers/create?plan=${plan.id}`} className="btn-primary text-center w-full">
+                            {plan.type === 'FREE' ? 'Deploy Free' : 'Deploy Server'}
                         </Link>
                     </div>
                 ))}
@@ -94,7 +96,17 @@ export default function PlansPage() {
                         </div>
                         <div className="flex items-center justify-between">
                             <div className="text-2xl font-bold gradient-text">₹{customPrice}/mo</div>
-                            <button className="btn-primary">Deploy Custom Server</button>
+                            <button
+                                onClick={() => {
+                                    const customPlan = plans.find((p) => p.type === 'CUSTOM');
+                                    if (customPlan) {
+                                        router.push(`/dashboard/servers/create?plan=${customPlan.id}&ram=${ram}&cpu=${cpu}&disk=${disk}`);
+                                    }
+                                }}
+                                className="btn-primary"
+                            >
+                                Deploy Custom Server
+                            </button>
                         </div>
                     </div>
                 )}

@@ -383,6 +383,20 @@ fi
 GOOGLE_REDIRECT="${CALLBACK_BASE}/api/auth/google/callback"
 DISCORD_REDIRECT="${CALLBACK_BASE}/api/auth/discord/callback"
 
+# Detect IP-based callback (Google rejects these)
+CALLBACK_HOST=$(echo "$CALLBACK_BASE" | sed -E 's|^https?://||' | cut -d: -f1)
+IS_IP_BASED=false
+if [[ "$CALLBACK_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  IS_IP_BASED=true
+fi
+
+GOOGLE_OAUTH_BLOCKED=false
+if $IS_IP_BASED; then
+  GOOGLE_OAUTH_BLOCKED=true
+  warn "${RED}${BOLD}Google OAuth will NOT work with IP-based URLs!${NC}"
+  detail "Point a domain to ${CALLBACK_HOST} and set APP_URL in .env"
+fi
+
 # Sync URLs
 CURRENT_APP_URL=$(env_get .env APP_URL)
 if [[ -z "$CURRENT_APP_URL" || "$CURRENT_APP_URL" == "http://localhost"* ]]; then
@@ -424,7 +438,11 @@ fi
 # Display OAuth URLs
 echo -e "${GRAY}   │${NC}"
 echo -e "${GRAY}   │${NC}  ${MAGENTA}${BOLD}── Active OAuth Redirect URLs ──${NC}"
-echo -e "${GRAY}   │${NC}  ${CYAN}Google${NC}   ${WHITE}${GOOGLE_REDIRECT}${NC}"
+if $GOOGLE_OAUTH_BLOCKED; then
+  echo -e "${GRAY}   │${NC}  ${RED}Google${NC}   ${RED}✘ BLOCKED (IP) — needs domain${NC}"
+else
+  echo -e "${GRAY}   │${NC}  ${CYAN}Google${NC}   ${WHITE}${GOOGLE_REDIRECT}${NC}"
+fi
 echo -e "${GRAY}   │${NC}  ${CYAN}Discord${NC}  ${WHITE}${DISCORD_REDIRECT}${NC}"
 
 section_end
@@ -621,7 +639,12 @@ echo ""
 echo -e "${GRAY}   ┌─────────────────────────────────────────────────────────────${NC}"
 echo -e "${GRAY}   │${NC}  ${MAGENTA}${BOLD}⚡ Active OAuth Redirect URLs${NC}"
 echo -e "${GRAY}   ├─────────────────────────────────────────────────────────────${NC}"
-echo -e "${GRAY}   │${NC}  ${CYAN}Google${NC}   ${WHITE}${BOLD}${GOOGLE_REDIRECT}${NC}"
+if $GOOGLE_OAUTH_BLOCKED; then
+  echo -e "${GRAY}   │${NC}  ${RED}Google${NC}   ${RED}${BOLD}✘ BLOCKED — IP-based URL rejected by Google${NC}"
+  echo -e "${GRAY}   │${NC}  ${DIM}         Fix: Point a domain → ${CALLBACK_HOST}, set APP_URL, re-run${NC}"
+else
+  echo -e "${GRAY}   │${NC}  ${CYAN}Google${NC}   ${WHITE}${BOLD}${GOOGLE_REDIRECT}${NC}"
+fi
 echo -e "${GRAY}   │${NC}  ${CYAN}Discord${NC}  ${WHITE}${BOLD}${DISCORD_REDIRECT}${NC}"
 echo -e "${GRAY}   └─────────────────────────────────────────────────────────────${NC}"
 

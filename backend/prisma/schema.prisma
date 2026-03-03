@@ -21,6 +21,7 @@ enum Role {
 enum AuthProvider {
   GOOGLE
   DISCORD
+  EMAIL
 }
 
 enum ServerStatus {
@@ -79,9 +80,16 @@ model User {
   avatar          String?
   provider        AuthProvider
   providerId      String
+  passwordHash    String?
+  emailVerified   Boolean       @default(false)
+  emailVerifyToken   String?    @unique
+  emailVerifyExpiry  DateTime?
+  passwordResetToken  String?   @unique
+  passwordResetExpiry DateTime?
   role            Role          @default(USER)
   pterodactylId   Int?
   lastLoginAt     DateTime?
+  lastLoginIp     String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -94,9 +102,41 @@ model User {
   upiPayments       UpiPayment[]
   vpsInstances      Vps[]
   auditLogs         AuditLog[]
+  linkedAccounts    LinkedAccount[]
+  loginSessions     LoginSession[]
 
   @@index([email])
   @@index([providerId])
+  @@index([lastLoginIp])
+}
+
+model LinkedAccount {
+  id          String       @id @default(uuid())
+  userId      String
+  provider    AuthProvider
+  providerId  String
+  email       String?
+  linkedAt    DateTime     @default(now())
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerId])
+  @@index([userId])
+}
+
+model LoginSession {
+  id              String   @id @default(uuid())
+  userId          String
+  ipAddress       String
+  userAgent       String?
+  fingerprint     String?
+  createdAt       DateTime @default(now())
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([ipAddress])
+  @@index([fingerprint])
 }
 
 model PterodactylAccount {
@@ -248,9 +288,31 @@ model UpiPayment {
   @@index([utr])
 }
 
+model VpsPlan {
+  id              String   @id @default(uuid())
+  datalixPlanName String   @unique         // Datalix plan identifier (e.g. "vps-starter")
+  displayName     String                   // Your custom plan name shown to customers
+  description     String?
+  ram             Int                      // MB
+  cpu             Int                      // vCPU cores
+  disk            Int                      // GB
+  bandwidth       Int      @default(0)     // TB (0 = unlimited)
+  costPrice       Float                    // What Datalix charges YOU (real cost)
+  sellPrice       Float                    // What you charge your CUSTOMERS (your price)
+  isActive        Boolean  @default(true)  // Toggle plan visibility
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  vpsInstances    Vps[]
+
+  @@index([isActive])
+}
+
 model Vps {
   id          String    @id @default(uuid())
   userId      String
+  vpsPlanId   String?
   datalixId   String?
   planName    String?
   status      VpsStatus @default(PROVISIONING)
@@ -261,14 +323,17 @@ model Vps {
   cpu         Int?
   disk        Int?
   bandwidth   Int?
-  priceMonth  Float?
+  costPrice   Float?                       // Locked-in cost at time of provision
+  sellPrice   Float?                       // Locked-in sell price at time of provision
   expiresAt   DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vpsPlan     VpsPlan?  @relation(fields: [vpsPlanId], references: [id])
 
   @@index([userId])
+  @@index([vpsPlanId])
 }
 
 model AdminSetting {

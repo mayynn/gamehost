@@ -16,6 +16,11 @@ export const authApi = {
     logout: () => api.get('/auth/logout'),
     googleUrl: `${API_URL}/api/auth/google`,
     discordUrl: `${API_URL}/api/auth/discord`,
+    register: (data: { email: string; name: string; password: string }) => api.post('/auth/register', data),
+    login: (data: { email: string; password: string }) => api.post('/auth/login', data),
+    forgotPassword: (email: string) => api.post('/auth/forgot-password', { email }),
+    resetPassword: (token: string, password: string) => api.post('/auth/reset-password', { token, password }),
+    resendVerification: (email: string) => api.post('/auth/resend-verification', { email }),
 };
 
 // Servers
@@ -23,6 +28,7 @@ export const serversApi = {
     list: () => api.get('/servers'),
     get: (id: string) => api.get(`/servers/${id}`),
     create: (data: any) => api.post('/servers', data),
+    delete: (id: string) => api.delete(`/servers/${id}`),
     power: (id: string, signal: string) => api.post(`/servers/${id}/power`, { signal }),
     console: (id: string) => api.get(`/servers/${id}/console`),
     command: (id: string, cmd: string) => api.post(`/servers/${id}/command`, { command: cmd }),
@@ -30,12 +36,20 @@ export const serversApi = {
     readFile: (id: string, file: string) => api.get(`/servers/${id}/files/contents?file=${encodeURIComponent(file)}`),
     writeFile: (id: string, file: string, content: string) => api.post(`/servers/${id}/files/write`, { file, content }),
     deleteFiles: (id: string, root: string, files: string[]) => api.post(`/servers/${id}/files/delete`, { root, files }),
+    renameFile: (id: string, root: string, from: string, to: string) => api.put(`/servers/${id}/files/rename`, { root, from, to }),
+    createFolder: (id: string, root: string, name: string) => api.post(`/servers/${id}/files/folder`, { root, name }),
+    uploadUrl: (id: string) => api.get(`/servers/${id}/files/upload`),
     backups: (id: string) => api.get(`/servers/${id}/backups`),
     createBackup: (id: string) => api.post(`/servers/${id}/backups`),
+    deleteBackup: (id: string, backupId: string) => api.delete(`/servers/${id}/backups/${backupId}`),
+    downloadBackup: (id: string, backupId: string) => api.get(`/servers/${id}/backups/${backupId}/download`),
     databases: (id: string) => api.get(`/servers/${id}/databases`),
     createDb: (id: string, name: string) => api.post(`/servers/${id}/databases`, { name }),
+    deleteDb: (id: string, dbId: string) => api.delete(`/servers/${id}/databases/${dbId}`),
     network: (id: string) => api.get(`/servers/${id}/network`),
     startup: (id: string) => api.get(`/servers/${id}/startup`),
+    updateStartup: (id: string, key: string, value: string) => api.post(`/servers/${id}/startup`, { key, value }),
+    reinstall: (id: string) => api.post(`/servers/${id}/reinstall`),
 };
 
 // Plans
@@ -72,13 +86,22 @@ export const creditsApi = {
 export const pluginsApi = {
     detect: (uuid: string) => api.get(`/plugins/${uuid}/detect`),
     installed: (uuid: string) => api.get(`/plugins/${uuid}/installed`),
-    remove: (uuid: string, file: string) => api.delete(`/plugins/${uuid}/remove/${file}`),
-    modrinthSearch: (q: string) => api.get(`/plugins/modrinth/search?query=${encodeURIComponent(q)}`),
+    remove: (uuid: string, file: string) => api.delete(`/plugins/${uuid}/remove/${encodeURIComponent(file)}`),
+    modrinthSearch: (q: string, limit = 20, offset = 0) =>
+        api.get(`/plugins/modrinth/search?query=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}`),
     modrinthProject: (id: string) => api.get(`/plugins/modrinth/project/${id}`),
-    modrinthVersions: (id: string) => api.get(`/plugins/modrinth/project/${id}/versions`),
+    modrinthVersions: (id: string, loaders?: string[], gameVersions?: string[]) => {
+        const params = new URLSearchParams();
+        if (loaders) params.set('loaders', JSON.stringify(loaders));
+        if (gameVersions) params.set('game_versions', JSON.stringify(gameVersions));
+        return api.get(`/plugins/modrinth/project/${id}/versions?${params}`);
+    },
     modrinthInstall: (uuid: string, projectId: string, versionId: string) =>
         api.post(`/plugins/${uuid}/modrinth/install`, { projectId, versionId }),
-    spigetSearch: (q: string) => api.get(`/plugins/spiget/search?query=${encodeURIComponent(q)}`),
+    spigetSearch: (q: string, page = 1) =>
+        api.get(`/plugins/spiget/search?query=${encodeURIComponent(q)}&page=${page}`),
+    spigetResource: (id: number) => api.get(`/plugins/spiget/resource/${id}`),
+    spigetVersions: (id: number) => api.get(`/plugins/spiget/resource/${id}/versions`),
     spigetInstall: (uuid: string, resourceId: number) =>
         api.post(`/plugins/${uuid}/spiget/install`, { resourceId }),
 };
@@ -86,6 +109,7 @@ export const pluginsApi = {
 // Players
 export const playersApi = {
     detect: (uuid: string) => api.get(`/players/${uuid}/detect`),
+    online: (uuid: string) => api.get(`/players/${uuid}/online`),
     whitelist: (uuid: string) => api.get(`/players/${uuid}/whitelist`),
     addWhitelist: (uuid: string, player: string) => api.post(`/players/${uuid}/whitelist`, { player }),
     removeWhitelist: (uuid: string, player: string) => api.delete(`/players/${uuid}/whitelist/${player}`),
@@ -102,12 +126,17 @@ export const playersApi = {
 export const vpsApi = {
     plans: () => api.get('/vps/plans'),
     list: () => api.get('/vps'),
-    provision: (data: any) => api.post('/vps', data),
     create: (data: any) => api.post('/vps', data),
     get: (id: string) => api.get(`/vps/${id}`),
     control: (id: string, action: string) => api.post(`/vps/${id}/control`, { action }),
-    power: (id: string, action: string) => api.post(`/vps/${id}/control`, { action }),
+    renew: (id: string) => api.post(`/vps/${id}/renew`),
     terminate: (id: string) => api.delete(`/vps/${id}`),
+};
+
+// Users
+export const usersApi = {
+    profile: () => api.get('/users/profile'),
+    updateProfile: (data: { name?: string }) => api.patch('/users/profile', data),
 };
 
 // Admin
@@ -131,4 +160,20 @@ export const adminApi = {
     auditLogs: (page = 1) => api.get(`/admin/audit?page=${page}`),
     nodes: () => api.get('/admin/nodes'),
     eggs: () => api.get('/admin/eggs'),
+    // Alt detection
+    altAccounts: (page = 1) => api.get(`/admin/alts?page=${page}`),
+    userAlts: (id: string) => api.get(`/admin/users/${id}/alts`),
+    userLinkedAccounts: (id: string) => api.get(`/admin/users/${id}/linked-accounts`),
+    deleteAlts: (userIds: string[]) => api.post('/admin/alts/delete', { userIds }),
+    // VPS plan management
+    vpsPlans: () => api.get('/admin/vps/plans'),
+    syncVpsPlans: () => api.post('/admin/vps/plans/sync'),
+    updateVpsPlan: (id: string, data: any) => api.patch(`/admin/vps/plans/${id}`, data),
+    deleteVpsPlan: (id: string) => api.delete(`/admin/vps/plans/${id}`),
+    vpsStats: () => api.get('/admin/vps/stats'),
+};
+
+// Public settings (no auth required)
+export const settingsApi = {
+    public: () => api.get('/settings/public'),
 };

@@ -2,8 +2,20 @@
 
 import { useState, useEffect } from 'react';
 import { billingApi } from '@/lib/api';
-import { CreditCard, Clock, CheckCircle, XCircle, Banknote } from 'lucide-react';
+import { CreditCard, Clock, CheckCircle, XCircle, Banknote, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+// Load Razorpay SDK dynamically
+function loadRazorpayScript(): Promise<boolean> {
+    return new Promise((resolve) => {
+        if ((window as any).Razorpay) return resolve(true);
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.onload = () => resolve(true);
+        script.onerror = () => resolve(false);
+        document.body.appendChild(script);
+    });
+}
 
 export default function BillingPage() {
     const [payments, setPayments] = useState<any[]>([]);
@@ -13,28 +25,64 @@ export default function BillingPage() {
     const [utrInput, setUtrInput] = useState('');
     const [upiAmount, setUpiAmount] = useState('');
     const [loading, setLoading] = useState(true);
+    const [processing, setProcessing] = useState(false);
 
     useEffect(() => {
         Promise.all([
             billingApi.payments().then((r) => setPayments(r.data || [])),
             billingApi.gateways().then((r) => setGateways(r.data || {})),
-            billingApi.balance().then((r) => setBalance(r.data || 0)),
+            billingApi.balance().then((r) => setBalance(r.data?.balance ?? r.data ?? 0)),
         ]).finally(() => setLoading(false));
     }, []);
+
+    const refreshData = () => {
+        billingApi.balance().then((r) => setBalance(r.data?.balance ?? r.data ?? 0)).catch(() => { });
+        billingApi.payments().then((r) => setPayments(r.data || [])).catch(() => { });
+    };
 
     const addFunds = async (gateway: string) => {
         const amount = parseFloat(addAmount);
         if (!amount || amount < 10) return toast.error('Minimum amount is ₹10');
+        setProcessing(true);
         try {
             if (gateway === 'razorpay') {
+                const loaded = await loadRazorpayScript();
+                if (!loaded) return toast.error('Failed to load Razorpay SDK');
                 const { data } = await billingApi.razorpayCreate(amount);
-                toast.success(`Razorpay order created: ${data.orderId}`);
-                // In production, open Razorpay checkout here
+                const options = {
+                    key: data.keyId || data.key_id,
+                    amount: data.amount,
+                    currency: data.currency || 'INR',
+                    order_id: data.orderId || data.order_id,
+                    name: 'GameHost',
+                    description: `Add ₹${amount} to balance`,
+                    handler: async (response: any) => {
+                        try {
+                            await billingApi.razorpayVerify({
+                                razorpay_order_id: response.razorpay_order_id,
+                                razorpay_payment_id: response.razorpay_payment_id,
+                                razorpay_signature: response.razorpay_signature,
+                            });
+                            toast.success('Payment successful!');
+                            refreshData();
+                        } catch { toast.error('Payment verification failed'); }
+                    },
+                    theme: { color: '#00d4ff' },
+                };
+                const rzp = new (window as any).Razorpay(options);
+                rzp.on('payment.failed', () => toast.error('Payment failed'));
+                rzp.open();
             } else if (gateway === 'cashfree') {
                 const { data } = await billingApi.cashfreeCreate(amount);
-                toast.success(`Cashfree session created: ${data.sessionId}`);
+                if (data.paymentLink || data.payment_link) {
+                    window.open(data.paymentLink || data.payment_link, '_blank');
+                    toast.success('Redirecting to Cashfree...');
+                } else if (data.sessionId || data.session_id) {
+                    toast.success('Cashfree session created. Complete payment in the popup.');
+                }
             }
         } catch { toast.error('Payment creation failed'); }
+        finally { setProcessing(false); }
     };
 
     const submitUtr = async () => {
@@ -43,6 +91,7 @@ export default function BillingPage() {
             await billingApi.upiSubmit({ utr: utrInput, amount: parseFloat(upiAmount) });
             toast.success('UTR submitted for review');
             setUtrInput(''); setUpiAmount('');
+            refreshData();
         } catch { toast.error('Submission failed'); }
     };
 
@@ -64,15 +113,23 @@ export default function BillingPage() {
                 <div className="flex items-center justify-between mb-4">
                     <div>
                         <p className="text-sm text-gray-400">Current Balance</p>
-                        <p className="text-3xl font-bold gradient-text">₹{balance}</p>
+                        <p className="text-3xl font-bold gradient-text">₹{typeof balance === 'number' ? balance.toFixed(2) : balance}</p>
                     </div>
                     <Banknote className="w-10 h-10 text-primary" />
                 </div>
                 <div className="flex gap-2">
                     <input type="number" value={addAmount} onChange={(e) => setAddAmount(e.target.value)}
-                        placeholder="Amount (₹)" className="input-field flex-1" />
-                    {gateways.razorpay && <button onClick={() => addFunds('razorpay')} className="btn-primary text-sm px-4">Razorpay</button>}
-                    {gateways.cashfree && <button onClick={() => addFunds('cashfree')} className="btn-secondary text-sm px-4">Cashfree</button>}
+                        placeholder="Amount (₹)" className="input-field flex-1" min="10" />
+                    {gateways.razorpay && (
+                        <button onClick={() => addFunds('razorpay')} disabled={processing} className="btn-primary text-sm px-4 flex items-center gap-2">
+                            {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Razorpay
+                        </button>
+                    )}
+                    {gateways.cashfree && (
+                        <button onClick={() => addFunds('cashfree')} disabled={processing} className="btn-secondary text-sm px-4 flex items-center gap-2">
+                            {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Cashfree
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -80,6 +137,12 @@ export default function BillingPage() {
             {gateways.upi && (
                 <div className="glass-card p-6 mb-6">
                     <h3 className="font-semibold mb-4">UPI Payment</h3>
+                    {gateways.upiId && (
+                        <div className="p-3 rounded-lg bg-white/5 mb-4">
+                            <p className="text-sm text-gray-400">Pay to UPI ID:</p>
+                            <p className="text-lg font-mono text-primary">{gateways.upiId}</p>
+                        </div>
+                    )}
                     <p className="text-sm text-gray-400 mb-4">Send payment to our UPI ID and submit the UTR number below for verification.</p>
                     <div className="flex gap-2">
                         <input value={upiAmount} onChange={(e) => setUpiAmount(e.target.value)} placeholder="Amount (₹)" className="input-field w-32" type="number" />
@@ -100,7 +163,7 @@ export default function BillingPage() {
                                 <p className="font-medium text-sm">₹{p.amount} via {p.gateway}</p>
                                 <p className="text-xs text-gray-500">{new Date(p.createdAt).toLocaleDateString()}</p>
                             </div>
-                            <span className={`text-xs font-medium ${p.status === 'COMPLETED' ? 'text-green-400' : p.status === 'PENDING' ? 'text-orange-400' : 'text-red-400'}`}>
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${p.status === 'COMPLETED' ? 'text-green-400 bg-green-500/10' : p.status === 'PENDING' ? 'text-orange-400 bg-orange-500/10' : 'text-red-400 bg-red-500/10'}`}>
                                 {p.status}
                             </span>
                         </div>

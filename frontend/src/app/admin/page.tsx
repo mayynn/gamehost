@@ -6,14 +6,18 @@ import { useRouter } from 'next/navigation';
 import { authApi } from '@/lib/api';
 import {
     LayoutDashboard, Users, Server, CreditCard, Settings, ClipboardList,
-    Shield, DollarSign, Check, X
+    Shield, DollarSign, Check, X, UserX, Link2, AlertTriangle, Trash2,
+    CloudCog, RefreshCw, TrendingUp
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 const adminTabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'users', label: 'Users', icon: Users },
     { id: 'servers', label: 'Servers', icon: Server },
+    { id: 'alts', label: 'Alt Detection', icon: UserX },
     { id: 'plans', label: 'Plans', icon: CreditCard },
+    { id: 'vps-plans', label: 'VPS Plans', icon: CloudCog },
     { id: 'upi', label: 'UPI Approvals', icon: DollarSign },
     { id: 'settings', label: 'Settings', icon: Settings },
     { id: 'audit', label: 'Audit Logs', icon: ClipboardList },
@@ -28,6 +32,12 @@ export default function AdminPage() {
     const [pendingUpi, setPendingUpi] = useState<any[]>([]);
     const [settings, setSettings] = useState<any>({});
     const [audit, setAudit] = useState<any>({ logs: [], total: 0 });
+    const [altData, setAltData] = useState<any>({ altGroups: [], total: 0 });
+    const [selectedAlts, setSelectedAlts] = useState<string[]>([]);
+    const [vpsPlans, setVpsPlans] = useState<any[]>([]);
+    const [vpsStats, setVpsStats] = useState<any>(null);
+    const [syncing, setSyncing] = useState(false);
+    const [editingPlan, setEditingPlan] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -43,6 +53,13 @@ export default function AdminPage() {
                 case 'dashboard': { const r = await adminApi.dashboard(); setStats(r.data); break; }
                 case 'users': { const r = await adminApi.users(); setUsers(r.data); break; }
                 case 'servers': { const r = await adminApi.servers(); setServers(r.data); break; }
+                case 'alts': { const r = await adminApi.altAccounts(); setAltData(r.data); setSelectedAlts([]); break; }
+                case 'vps-plans': {
+                    const [plansR, statsR] = await Promise.all([adminApi.vpsPlans(), adminApi.vpsStats()]);
+                    setVpsPlans(plansR.data || []);
+                    setVpsStats(statsR.data || null);
+                    break;
+                }
                 case 'upi': { const r = await adminApi.pendingUpi(); setPendingUpi(r.data || []); break; }
                 case 'settings': { const r = await adminApi.settings(); setSettings(r.data || {}); break; }
                 case 'audit': { const r = await adminApi.auditLogs(); setAudit(r.data); break; }
@@ -165,6 +182,290 @@ export default function AdminPage() {
                                         </div>
                                     </div>
                                 ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Alt Detection */}
+                    {tab === 'alts' && (
+                        <div>
+                            <div className="flex items-center justify-between mb-6">
+                                <div>
+                                    <h2 className="text-2xl font-display font-bold">Alt Account Detection</h2>
+                                    <p className="text-sm text-gray-500 mt-1">Users sharing the same IP address across multiple accounts</p>
+                                </div>
+                                {selectedAlts.length > 0 && (
+                                    <button
+                                        onClick={async () => {
+                                            if (!confirm(`Delete ${selectedAlts.length} selected alt account(s)? This cannot be undone.`)) return;
+                                            try {
+                                                await adminApi.deleteAlts(selectedAlts);
+                                                loadTab('alts');
+                                            } catch { }
+                                        }}
+                                        className="flex items-center gap-2 px-4 py-2 bg-red-500/20 border border-red-500/30 text-red-400 rounded-xl
+                                            hover:bg-red-500/30 transition-all text-sm font-medium"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                        Delete {selectedAlts.length} Selected
+                                    </button>
+                                )}
+                            </div>
+
+                            {altData.altGroups?.length === 0 ? (
+                                <div className="glass-card p-12 text-center">
+                                    <Shield className="w-12 h-12 mx-auto mb-3 text-green-400 opacity-60" />
+                                    <p className="text-gray-400 font-medium">No alt accounts detected</p>
+                                    <p className="text-sm text-gray-600 mt-1">All users appear to be unique</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {altData.altGroups?.map((group: any, gi: number) => (
+                                        <div key={gi} className="glass-card overflow-hidden">
+                                            <div className="px-5 py-3 bg-red-500/5 border-b border-white/5 flex items-center gap-3">
+                                                <AlertTriangle className="w-4 h-4 text-orange-400" />
+                                                <span className="text-sm font-medium">
+                                                    IP: <code className="text-primary bg-white/5 px-2 py-0.5 rounded">{group.ipAddress}</code>
+                                                </span>
+                                                <span className="text-xs text-gray-500">
+                                                    {group.userCount} accounts sharing this IP
+                                                </span>
+                                            </div>
+                                            <div className="divide-y divide-white/5">
+                                                {group.users?.map((u: any) => (
+                                                    <div key={u.id} className="flex items-center gap-4 px-5 py-3 hover:bg-white/5 transition-colors">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedAlts.includes(u.id)}
+                                                            onChange={(e) => {
+                                                                setSelectedAlts((prev) =>
+                                                                    e.target.checked
+                                                                        ? [...prev, u.id]
+                                                                        : prev.filter((id) => id !== u.id),
+                                                                );
+                                                            }}
+                                                            className="w-4 h-4 rounded border-white/20 bg-white/5 text-primary focus:ring-primary/30"
+                                                            disabled={u.role === 'ADMIN'}
+                                                        />
+                                                        <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-xs flex-shrink-0">
+                                                            {u.name?.[0] || '?'}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-medium text-sm truncate">{u.name}</span>
+                                                                <span className={`text-xs px-1.5 py-0.5 rounded ${u.role === 'ADMIN' ? 'bg-primary/10 text-primary' : 'bg-white/5 text-gray-500'}`}>
+                                                                    {u.role}
+                                                                </span>
+                                                                <span className="text-xs px-1.5 py-0.5 rounded bg-white/5 text-gray-500 flex items-center gap-1">
+                                                                    <Link2 className="w-3 h-3" />{u.provider}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-xs text-gray-500 truncate">{u.email}</p>
+                                                        </div>
+                                                        <div className="text-right text-xs text-gray-500 hidden sm:block">
+                                                            <p>{u._count?.servers || 0} servers</p>
+                                                            <p>{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</p>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* VPS Plans Management */}
+                    {tab === 'vps-plans' && (
+                        <div>
+                            <div className="flex items-center justify-between mb-6">
+                                <div>
+                                    <h2 className="text-2xl font-display font-bold">VPS Plans</h2>
+                                    <p className="text-sm text-gray-500 mt-1">Manage Datalix VPS plans with your custom reseller pricing</p>
+                                </div>
+                                <button
+                                    onClick={async () => {
+                                        setSyncing(true);
+                                        try {
+                                            const r = await adminApi.syncVpsPlans();
+                                            toast.success(`Synced ${r.data?.synced || 0} plans from Datalix`);
+                                            loadTab('vps-plans');
+                                        } catch { toast.error('Sync failed'); }
+                                        finally { setSyncing(false); }
+                                    }}
+                                    disabled={syncing}
+                                    className="flex items-center gap-2 btn-primary"
+                                >
+                                    <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+                                    {syncing ? 'Syncing...' : 'Sync from Datalix'}
+                                </button>
+                            </div>
+
+                            {/* VPS Revenue Stats */}
+                            {vpsStats && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+                                    <div className="glass-card p-4">
+                                        <p className="text-xs text-gray-500">Total VPS</p>
+                                        <p className="text-2xl font-bold">{vpsStats.totalVps}</p>
+                                    </div>
+                                    <div className="glass-card p-4">
+                                        <p className="text-xs text-gray-500">Active VPS</p>
+                                        <p className="text-2xl font-bold text-green-400">{vpsStats.activeVps}</p>
+                                    </div>
+                                    <div className="glass-card p-4">
+                                        <p className="text-xs text-gray-500">Monthly Revenue</p>
+                                        <p className="text-2xl font-bold gradient-text">₹{vpsStats.monthlyRevenue?.toFixed(0)}</p>
+                                    </div>
+                                    <div className="glass-card p-4">
+                                        <p className="text-xs text-gray-500">Monthly Cost</p>
+                                        <p className="text-2xl font-bold text-red-400">₹{vpsStats.monthlyCost?.toFixed(0)}</p>
+                                    </div>
+                                    <div className="glass-card p-4">
+                                        <p className="text-xs text-gray-500">Monthly Profit</p>
+                                        <p className={`text-2xl font-bold ${(vpsStats.monthlyProfit || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                            ₹{vpsStats.monthlyProfit?.toFixed(0)}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Plans Table */}
+                            {vpsPlans.length === 0 ? (
+                                <div className="glass-card p-12 text-center">
+                                    <CloudCog className="w-12 h-12 mx-auto mb-3 text-gray-600" />
+                                    <p className="text-gray-400 font-medium">No VPS plans configured</p>
+                                    <p className="text-sm text-gray-600 mt-1">Click "Sync from Datalix" to import available plans</p>
+                                </div>
+                            ) : (
+                                <div className="glass-card overflow-hidden">
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="border-b border-white/10">
+                                                <th className="text-left p-4 text-gray-400 font-medium">Plan Name</th>
+                                                <th className="text-left p-4 text-gray-400 font-medium hidden md:table-cell">Specs</th>
+                                                <th className="text-left p-4 text-gray-400 font-medium">Cost (Datalix)</th>
+                                                <th className="text-left p-4 text-gray-400 font-medium">Sell Price</th>
+                                                <th className="text-left p-4 text-gray-400 font-medium hidden sm:table-cell">Profit</th>
+                                                <th className="text-left p-4 text-gray-400 font-medium hidden sm:table-cell">Instances</th>
+                                                <th className="text-left p-4 text-gray-400 font-medium">Status</th>
+                                                <th className="text-left p-4 text-gray-400 font-medium">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {vpsPlans.map((plan: any) => {
+                                                const profit = (plan.sellPrice || 0) - (plan.costPrice || 0);
+                                                const margin = plan.costPrice ? ((profit / plan.costPrice) * 100).toFixed(0) : '—';
+                                                const isEditing = editingPlan === plan.id;
+
+                                                return (
+                                                    <tr key={plan.id} className="border-b border-white/5 hover:bg-white/5">
+                                                        <td className="p-4">
+                                                            {isEditing ? (
+                                                                <input
+                                                                    className="input-field text-sm w-40"
+                                                                    defaultValue={plan.displayName}
+                                                                    onBlur={async (e) => {
+                                                                        if (e.target.value !== plan.displayName) {
+                                                                            await adminApi.updateVpsPlan(plan.id, { displayName: e.target.value });
+                                                                            loadTab('vps-plans');
+                                                                        }
+                                                                    }}
+                                                                />
+                                                            ) : (
+                                                                <div>
+                                                                    <p className="font-medium">{plan.displayName}</p>
+                                                                    <p className="text-xs text-gray-600">{plan.datalixPlanName}</p>
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td className="p-4 text-gray-400 hidden md:table-cell">
+                                                            <span className="text-xs">{plan.ram}MB · {plan.cpu} CPU · {plan.disk}GB</span>
+                                                        </td>
+                                                        <td className="p-4 text-red-400 font-mono">₹{plan.costPrice}</td>
+                                                        <td className="p-4">
+                                                            {isEditing ? (
+                                                                <input
+                                                                    type="number"
+                                                                    className="input-field text-sm w-24 font-mono"
+                                                                    defaultValue={plan.sellPrice}
+                                                                    min={0}
+                                                                    step={1}
+                                                                    onBlur={async (e) => {
+                                                                        const val = parseFloat(e.target.value);
+                                                                        if (!isNaN(val) && val !== plan.sellPrice) {
+                                                                            await adminApi.updateVpsPlan(plan.id, { sellPrice: val });
+                                                                            loadTab('vps-plans');
+                                                                        }
+                                                                    }}
+                                                                />
+                                                            ) : (
+                                                                <span className="text-primary font-bold font-mono">₹{plan.sellPrice}</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="p-4 hidden sm:table-cell">
+                                                            <span className={`font-mono text-xs ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                                                ₹{profit.toFixed(0)} ({margin}%)
+                                                            </span>
+                                                        </td>
+                                                        <td className="p-4 text-gray-400 hidden sm:table-cell">{plan._count?.vpsInstances || 0}</td>
+                                                        <td className="p-4">
+                                                            <button
+                                                                onClick={async () => {
+                                                                    await adminApi.updateVpsPlan(plan.id, { isActive: !plan.isActive });
+                                                                    loadTab('vps-plans');
+                                                                }}
+                                                                className={`text-xs px-2 py-1 rounded ${plan.isActive
+                                                                    ? 'bg-green-500/10 text-green-400'
+                                                                    : 'bg-red-500/10 text-red-400'
+                                                                    }`}
+                                                            >
+                                                                {plan.isActive ? 'Active' : 'Hidden'}
+                                                            </button>
+                                                        </td>
+                                                        <td className="p-4">
+                                                            <div className="flex gap-2">
+                                                                <button
+                                                                    onClick={() => setEditingPlan(isEditing ? null : plan.id)}
+                                                                    className="text-xs px-3 py-1 rounded bg-primary/10 text-primary hover:bg-primary/20"
+                                                                >
+                                                                    {isEditing ? 'Done' : 'Edit'}
+                                                                </button>
+                                                                <button
+                                                                    onClick={async () => {
+                                                                        if (!confirm(`Delete plan "${plan.displayName}"?`)) return;
+                                                                        try {
+                                                                            await adminApi.deleteVpsPlan(plan.id);
+                                                                            toast.success('Plan deleted');
+                                                                            loadTab('vps-plans');
+                                                                        } catch { toast.error('Cannot delete (has active instances)'); }
+                                                                    }}
+                                                                    className="text-xs px-3 py-1 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                                                                >
+                                                                    Del
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+
+                            {/* How it works info */}
+                            <div className="glass-card p-5 mt-6 border-l-4 border-primary/50">
+                                <div className="flex items-start gap-3">
+                                    <TrendingUp className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
+                                    <div className="text-sm text-gray-400">
+                                        <p className="font-medium text-gray-300 mb-1">How VPS Reselling Works</p>
+                                        <p><strong>Cost Price</strong> = What Datalix charges you (auto-synced).</p>
+                                        <p><strong>Sell Price</strong> = What your customers pay (set by you).</p>
+                                        <p><strong>Profit</strong> = Sell Price - Cost Price. Set any markup you want.</p>
+                                        <p className="mt-1">Users must have sufficient <strong>balance</strong> to provision. Monthly auto-billing renews active VPS or suspends if balance is low.</p>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     )}

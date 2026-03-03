@@ -1,28 +1,40 @@
 import { Controller, Get, Post, Delete, Param, Query, Body, UseGuards } from '@nestjs/common';
 import { PluginsService } from './plugins.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { ServersService } from '../servers/servers.service';
 
 @Controller('plugins')
 @UseGuards(JwtAuthGuard)
 export class PluginsController {
-    constructor(private pluginsService: PluginsService) { }
+    constructor(
+        private pluginsService: PluginsService,
+        private serversService: ServersService,
+    ) { }
+
+    private async verifyOwnership(user: any, uuid: string) {
+        await this.serversService.verifyOwnershipByUuid(user.id, uuid);
+    }
 
     @Get(':serverUuid/detect')
-    detect(@Param('serverUuid') uuid: string) {
+    async detect(@CurrentUser() user: any, @Param('serverUuid') uuid: string) {
+        await this.verifyOwnership(user, uuid);
         return this.pluginsService.detectServerSoftware(uuid);
     }
 
     @Get(':serverUuid/installed')
-    getInstalled(@Param('serverUuid') uuid: string) {
+    async getInstalled(@CurrentUser() user: any, @Param('serverUuid') uuid: string) {
+        await this.verifyOwnership(user, uuid);
         return this.pluginsService.getInstalledPlugins(uuid);
     }
 
     @Delete(':serverUuid/remove/:fileName')
-    remove(@Param('serverUuid') uuid: string, @Param('fileName') fileName: string) {
+    async remove(@CurrentUser() user: any, @Param('serverUuid') uuid: string, @Param('fileName') fileName: string) {
+        await this.verifyOwnership(user, uuid);
         return this.pluginsService.removePlugin(uuid, fileName);
     }
 
-    // --- Modrinth ---
+    // --- Modrinth (search is public, no ownership needed) ---
     @Get('modrinth/search')
     searchModrinth(@Query('query') query: string, @Query('limit') limit?: string, @Query('offset') offset?: string) {
         return this.pluginsService.searchModrinth(query, {
@@ -50,14 +62,16 @@ export class PluginsController {
     }
 
     @Post(':serverUuid/modrinth/install')
-    installModrinth(
+    async installModrinth(
+        @CurrentUser() user: any,
         @Param('serverUuid') uuid: string,
         @Body() body: { projectId: string; versionId: string },
     ) {
+        await this.verifyOwnership(user, uuid);
         return this.pluginsService.installFromModrinth(uuid, body.projectId, body.versionId);
     }
 
-    // --- Spiget ---
+    // --- Spiget (search is public, no ownership needed) ---
     @Get('spiget/search')
     searchSpiget(@Query('query') query: string, @Query('page') page?: string) {
         return this.pluginsService.searchSpiget(query, parseInt(page || '1'));
@@ -68,8 +82,14 @@ export class PluginsController {
         return this.pluginsService.getSpigetResource(parseInt(id));
     }
 
+    @Get('spiget/resource/:id/versions')
+    getSpigetVersions(@Param('id') id: string) {
+        return this.pluginsService.getSpigetResourceVersions(parseInt(id));
+    }
+
     @Post(':serverUuid/spiget/install')
-    installSpiget(@Param('serverUuid') uuid: string, @Body('resourceId') resourceId: number) {
+    async installSpiget(@CurrentUser() user: any, @Param('serverUuid') uuid: string, @Body('resourceId') resourceId: number) {
+        await this.verifyOwnership(user, uuid);
         return this.pluginsService.installFromSpiget(uuid, resourceId);
     }
 }

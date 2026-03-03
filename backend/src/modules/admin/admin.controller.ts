@@ -89,4 +89,43 @@ export class AdminController {
 
     @Get('eggs')
     getEggs() { return this.adminService.getEggs(); }
+
+    // --- Alt Detection ---
+    @Get('alts')
+    getAltAccounts(@Query('page') page?: string) {
+        return this.adminService.getAltAccounts(parseInt(page || '1'));
+    }
+
+    @Get('users/:id/alts')
+    getUserAlts(@Param('id') id: string) {
+        return this.adminService.getUserAlts(id);
+    }
+
+    @Get('users/:id/linked-accounts')
+    getLinkedAccounts(@Param('id') id: string) {
+        return this.adminService.getLinkedAccounts(id);
+    }
+
+    @Post('alts/delete')
+    deleteAlts(@Body('userIds') userIds: string[], @CurrentUser() user: any) {
+        return this.adminService.deleteAltAccounts(userIds, user.id);
+    }
+
+    // --- VPS Plans ---
+    @Get('vps/plans')
+    getVpsPlans() { return this.adminService.getVpsPlans(); }
+
+    @Post('vps/plans/sync')
+    syncVpsPlans() { return this.adminService.syncVpsPlansFromDatalix(); }
+
+    @Patch('vps/plans/:id')
+    updateVpsPlan(@Param('id') id: string, @Body() body: any) {
+        return this.adminService.updateVpsPlan(id, body);
+    }
+
+    @Delete('vps/plans/:id')
+    deleteVpsPlan(@Param('id') id: string) { return this.adminService.deleteVpsPlan(id); }
+
+    @Get('vps/stats')
+    getVpsStats() { return this.adminService.getVpsStats(); }
 }

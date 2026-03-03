@@ -1,69 +1,90 @@
 import { Controller, Get, Post, Delete, Param, Body, UseGuards } from '@nestjs/common';
 import { PlayersService } from './players.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { ServersService } from '../servers/servers.service';
 
 @Controller('players')
 @UseGuards(JwtAuthGuard)
 export class PlayersController {
-    constructor(private playersService: PlayersService) { }
+    constructor(
+        private playersService: PlayersService,
+        private serversService: ServersService,
+    ) { }
+
+    private async verifyOwnership(user: any, uuid: string) {
+        await this.serversService.verifyOwnershipByUuid(user.id, uuid);
+    }
 
     @Get(':uuid/detect')
-    isMinecraft(@Param('uuid') uuid: string) {
+    async isMinecraft(@CurrentUser() user: any, @Param('uuid') uuid: string) {
+        await this.verifyOwnership(user, uuid);
         return this.playersService.isMinecraftServer(uuid);
     }
 
     @Get(':uuid/online')
-    getOnline(@Param('uuid') uuid: string) {
+    async getOnline(@CurrentUser() user: any, @Param('uuid') uuid: string) {
+        await this.verifyOwnership(user, uuid);
         return this.playersService.getOnlinePlayers(uuid);
     }
 
     @Get(':uuid/whitelist')
-    getWhitelist(@Param('uuid') uuid: string) {
+    async getWhitelist(@CurrentUser() user: any, @Param('uuid') uuid: string) {
+        await this.verifyOwnership(user, uuid);
         return this.playersService.getWhitelist(uuid);
     }
 
     @Post(':uuid/whitelist')
-    addWhitelist(@Param('uuid') uuid: string, @Body('player') player: string) {
+    async addWhitelist(@CurrentUser() user: any, @Param('uuid') uuid: string, @Body('player') player: string) {
+        await this.verifyOwnership(user, uuid);
         return this.playersService.addToWhitelist(uuid, player);
     }
 
     @Delete(':uuid/whitelist/:player')
-    removeWhitelist(@Param('uuid') uuid: string, @Param('player') player: string) {
+    async removeWhitelist(@CurrentUser() user: any, @Param('uuid') uuid: string, @Param('player') player: string) {
+        await this.verifyOwnership(user, uuid);
         return this.playersService.removeFromWhitelist(uuid, player);
     }
 
     @Get(':uuid/banned')
-    getBanned(@Param('uuid') uuid: string) {
+    async getBanned(@CurrentUser() user: any, @Param('uuid') uuid: string) {
+        await this.verifyOwnership(user, uuid);
         return this.playersService.getBannedPlayers(uuid);
     }
 
     @Post(':uuid/ban')
-    ban(@Param('uuid') uuid: string, @Body() body: { player: string; reason?: string }) {
+    async ban(@CurrentUser() user: any, @Param('uuid') uuid: string, @Body() body: { player: string; reason?: string }) {
+        await this.verifyOwnership(user, uuid);
         return this.playersService.banPlayer(uuid, body.player, body.reason);
     }
 
     @Post(':uuid/unban')
-    unban(@Param('uuid') uuid: string, @Body('player') player: string) {
+    async unban(@CurrentUser() user: any, @Param('uuid') uuid: string, @Body('player') player: string) {
+        await this.verifyOwnership(user, uuid);
         return this.playersService.unbanPlayer(uuid, player);
     }
 
     @Get(':uuid/ops')
-    getOps(@Param('uuid') uuid: string) {
+    async getOps(@CurrentUser() user: any, @Param('uuid') uuid: string) {
+        await this.verifyOwnership(user, uuid);
         return this.playersService.getOps(uuid);
     }
 
     @Post(':uuid/op')
-    op(@Param('uuid') uuid: string, @Body('player') player: string) {
+    async op(@CurrentUser() user: any, @Param('uuid') uuid: string, @Body('player') player: string) {
+        await this.verifyOwnership(user, uuid);
         return this.playersService.opPlayer(uuid, player);
     }
 
     @Post(':uuid/deop')
-    deop(@Param('uuid') uuid: string, @Body('player') player: string) {
+    async deop(@CurrentUser() user: any, @Param('uuid') uuid: string, @Body('player') player: string) {
+        await this.verifyOwnership(user, uuid);
         return this.playersService.deopPlayer(uuid, player);
     }
 
     @Post(':uuid/kick')
-    kick(@Param('uuid') uuid: string, @Body() body: { player: string; reason?: string }) {
+    async kick(@CurrentUser() user: any, @Param('uuid') uuid: string, @Body() body: { player: string; reason?: string }) {
+        await this.verifyOwnership(user, uuid);
         return this.playersService.kickPlayer(uuid, body.player, body.reason);
     }
 }

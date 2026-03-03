@@ -1,7 +1,21 @@
 'use client';
-import { HeadphonesIcon, MessageSquare, Mail } from 'lucide-react';
+import { HeadphonesIcon, MessageSquare, Mail, Loader2 } from 'lucide-react';
+import { settingsApi } from '@/lib/api';
+import { useState, useEffect } from 'react';
 
 export default function SupportPage() {
+    const [discordUrl, setDiscordUrl] = useState('');
+    const [supportEmail, setSupportEmail] = useState('');
+    const [loaded, setLoaded] = useState(false);
+
+    useEffect(() => {
+        settingsApi.public().then((r) => {
+            const settings = r.data || {};
+            setDiscordUrl(settings.DISCORD_INVITE_URL || '');
+            setSupportEmail(settings.SUPPORT_EMAIL || '');
+        }).catch(() => { }).finally(() => setLoaded(true));
+    }, []);
+
     return (
         <div>
             <h1 className="text-2xl font-display font-bold mb-8">Support</h1>
@@ -10,13 +24,19 @@ export default function SupportPage() {
                     <MessageSquare className="w-12 h-12 text-primary mx-auto mb-4" />
                     <h3 className="text-lg font-semibold mb-2">Discord Community</h3>
                     <p className="text-sm text-gray-400 mb-4">Join our Discord server for instant help and community support.</p>
-                    <a href="#" className="btn-primary inline-block">Join Discord</a>
+                    <a href={discordUrl || '#'} target="_blank" rel="noopener noreferrer"
+                        className={`btn-primary inline-block ${!discordUrl ? 'opacity-50 pointer-events-none' : ''}`}>
+                        {discordUrl ? 'Join Discord' : 'Discord not configured'}
+                    </a>
                 </div>
                 <div className="glass-card-hover p-8 text-center">
                     <Mail className="w-12 h-12 text-accent mx-auto mb-4" />
                     <h3 className="text-lg font-semibold mb-2">Email Support</h3>
                     <p className="text-sm text-gray-400 mb-4">Send us an email and we&apos;ll get back to you within 24 hours.</p>
-                    <a href="mailto:support@gamehost.com" className="btn-secondary inline-block">Email Us</a>
+                    <a href={supportEmail ? `mailto:${supportEmail}` : '#'}
+                        className={`btn-secondary inline-block ${!supportEmail ? 'opacity-50 pointer-events-none' : ''}`}>
+                        {supportEmail ? 'Email Us' : 'Email not configured'}
+                    </a>
                 </div>
             </div>
             <div className="glass-card p-6 mt-8 max-w-4xl">

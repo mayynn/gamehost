@@ -15,7 +15,7 @@ export default function CreateServerPage() {
     const [eggs, setEggs] = useState<any[]>([]);
     const [nodes, setNodes] = useState<any[]>([]);
     const [serverName, setServerName] = useState('');
-    const [selectedEgg, setSelectedEgg] = useState<number | null>(null);
+    const [selectedEgg, setSelectedEgg] = useState<any>(null);
     const [selectedNode, setSelectedNode] = useState<number | null>(null);
     const [creating, setCreating] = useState(false);
 
@@ -39,7 +39,8 @@ export default function CreateServerPage() {
             await serversApi.create({
                 name: serverName,
                 planId,
-                eggId: selectedEgg,
+                eggId: selectedEgg.id,
+                nestId: selectedEgg.nestId,
                 nodeId: selectedNode,
             });
             toast.success('Server created! Deploying...');
@@ -86,8 +87,8 @@ export default function CreateServerPage() {
                         {eggs.map((egg: any) => (
                             <button
                                 key={egg.id}
-                                onClick={() => setSelectedEgg(egg.id)}
-                                className={`p-4 rounded-xl border text-left transition-all ${selectedEgg === egg.id
+                                onClick={() => setSelectedEgg(egg)}
+                                className={`p-4 rounded-xl border text-left transition-all ${selectedEgg?.id === egg.id
                                         ? 'border-primary bg-primary/10 shadow-lg shadow-primary/10'
                                         : 'border-white/10 bg-white/5 hover:border-white/20'
                                     }`}
@@ -127,7 +128,7 @@ export default function CreateServerPage() {
                     <h4 className="text-sm font-medium text-gray-300 mb-2">Summary</h4>
                     <div className="text-sm text-gray-400 space-y-1">
                         <p>Plan: <span className="text-white">{plan?.name || '...'}</span></p>
-                        <p>Game: <span className="text-white">{eggs.find(e => e.id === selectedEgg)?.name || 'Not selected'}</span></p>
+                        <p>Game: <span className="text-white">{selectedEgg?.name || 'Not selected'}</span></p>
                         <p>Price: <span className="text-primary font-bold">{plan?.type === 'FREE' ? 'Free' : `₹${plan?.pricePerMonth}/mo`}</span></p>
                     </div>
                 </div>
@@ -135,8 +136,7 @@ export default function CreateServerPage() {
                 {/* Create Button */}
                 <button
                     onClick={createServer}
-                    disabled={creating || !serverName || !selectedEgg}
-                    className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50"
+                    disabled={creating || !serverName || !selectedEgg}                    className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                     {creating ? <><Loader2 className="w-4 h-4 animate-spin" /> Deploying...</> : <><Server className="w-4 h-4" /> Deploy Server</>}
                 </button>

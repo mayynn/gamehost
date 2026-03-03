@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
+import * as FormData from 'form-data';
 import { PterodactylClientService } from '../pterodactyl/pterodactyl-client.service';
 
 type ServerSoftware = 'paper' | 'spigot' | 'bukkit' | 'velocity' | 'bungeecord' | 'fabric' | 'forge' | 'unknown';
@@ -172,14 +173,15 @@ export class PluginsService {
             // Download and upload to server
             const { data: fileData } = await axios.get(downloadUrl, { responseType: 'arraybuffer' });
 
-            // Write to server via Pterodactyl file API
+            // Write to server via Pterodactyl file upload (multipart)
             const uploadUrl = await this.pterodactylClient.uploadFileUrl(serverUuid, installDir);
             if (uploadUrl) {
-                await axios.post(uploadUrl, fileData, {
-                    headers: {
-                        'Content-Type': 'application/octet-stream',
-                        'Content-Disposition': `attachment; filename="${fileName}"`,
-                    },
+                const form = new FormData();
+                form.append('files', Buffer.from(fileData), { filename: fileName });
+                await axios.post(uploadUrl, form, {
+                    headers: form.getHeaders(),
+                    maxContentLength: Infinity,
+                    maxBodyLength: Infinity,
                 });
             }
 
@@ -201,8 +203,12 @@ export class PluginsService {
 
             const uploadUrl = await this.pterodactylClient.uploadFileUrl(serverUuid, installDir);
             if (uploadUrl) {
-                await axios.post(uploadUrl, fileData, {
-                    headers: { 'Content-Type': 'application/octet-stream' },
+                const form = new FormData();
+                form.append('files', Buffer.from(fileData), { filename: fileName });
+                await axios.post(uploadUrl, form, {
+                    headers: form.getHeaders(),
+                    maxContentLength: Infinity,
+                    maxBodyLength: Infinity,
                 });
             }
 

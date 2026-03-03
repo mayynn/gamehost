@@ -154,9 +154,42 @@ export class PterodactylClientService {
     async uploadFileUrl(uuid: string, directory = '/'): Promise<string | null> {
         try {
             const { data } = await this.api.get(`/servers/${uuid}/files/upload`);
-            return data.attributes.url;
+            const url = data.attributes.url;
+            // Append directory param so files land in the correct folder
+            const separator = url.includes('?') ? '&' : '?';
+            return `${url}${separator}directory=${encodeURIComponent(directory)}`;
         } catch (e) {
             this.logger.error(`Failed to get upload URL for ${uuid}: ${e.message}`);
+            return null;
+        }
+    }
+
+    async reinstall(uuid: string): Promise<boolean> {
+        try {
+            await this.api.post(`/servers/${uuid}/settings/reinstall`);
+            return true;
+        } catch (e) {
+            this.logger.error(`Failed to reinstall ${uuid}: ${e.message}`);
+            return false;
+        }
+    }
+
+    async createDirectory(uuid: string, root: string, name: string): Promise<boolean> {
+        try {
+            await this.api.post(`/servers/${uuid}/files/create-folder`, { root, name });
+            return true;
+        } catch (e) {
+            this.logger.error(`Failed to create directory on ${uuid}: ${e.message}`);
+            return false;
+        }
+    }
+
+    async downloadBackup(uuid: string, backupId: string): Promise<string | null> {
+        try {
+            const { data } = await this.api.get(`/servers/${uuid}/backups/${backupId}/download`);
+            return data.attributes?.url || null;
+        } catch (e) {
+            this.logger.error(`Failed to get backup download URL: ${e.message}`);
             return null;
         }
     }

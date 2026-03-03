@@ -1,12 +1,13 @@
 'use client';
 
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useState, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Float, Stars } from '@react-three/drei';
 import * as THREE from 'three';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { Shield, Zap, Server, CreditCard, Puzzle, Globe } from 'lucide-react';
+import { plansApi } from '@/lib/api';
 
 // ---------- 3D Components ----------
 
@@ -81,16 +82,25 @@ const features = [
     { icon: Globe, title: 'Global Network', desc: 'Servers across multiple regions for the best latency' },
 ];
 
-// ---------- Plans Preview ----------
-const plans = [
-    { name: 'Starter', price: 'Free', ram: '1 GB', cpu: '50%', disk: '5 GB', color: 'from-green-500 to-emerald-500' },
-    { name: 'Standard', price: '₹149/mo', ram: '4 GB', cpu: '200%', disk: '20 GB', color: 'from-primary to-blue-500' },
-    { name: 'Premium', price: '₹499/mo', ram: '8 GB', cpu: '400%', disk: '50 GB', color: 'from-accent to-purple-500' },
-    { name: 'Ultimate', price: '₹999/mo', ram: '16 GB', cpu: '800%', disk: '100 GB', color: 'from-orange-500 to-red-500' },
+// ---------- Plans Preview (fetched from API) ----------
+const planColors = [
+    'from-green-500 to-emerald-500',
+    'from-primary to-blue-500',
+    'from-accent to-purple-500',
+    'from-orange-500 to-red-500',
 ];
 
 // ---------- Main Page ----------
 export default function LandingPage() {
+    const [plans, setPlans] = useState<any[]>([]);
+
+    useEffect(() => {
+        plansApi.list().then((r) => {
+            const data = r.data || [];
+            setPlans(data.filter((p: any) => p.type !== 'CUSTOM').slice(0, 4));
+        }).catch(() => { });
+    }, []);
+
     return (
         <div className="min-h-screen bg-dark">
             {/* Navbar */}
@@ -194,7 +204,7 @@ export default function LandingPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
                         {plans.map((plan, i) => (
                             <motion.div
-                                key={plan.name}
+                                key={plan.id || plan.name}
                                 initial={{ opacity: 0, y: 20 }}
                                 whileInView={{ opacity: 1, y: 0 }}
                                 viewport={{ once: true }}
@@ -207,13 +217,13 @@ export default function LandingPage() {
                                     </div>
                                 )}
                                 <h3 className="text-xl font-display font-bold mb-1">{plan.name}</h3>
-                                <div className={`text-3xl font-bold bg-gradient-to-r ${plan.color} bg-clip-text text-transparent mb-6`}>
-                                    {plan.price}
+                                <div className={`text-3xl font-bold bg-gradient-to-r ${planColors[i % planColors.length]} bg-clip-text text-transparent mb-6`}>
+                                    {plan.type === 'FREE' ? 'Free' : `₹${plan.pricePerMonth}/mo`}
                                 </div>
                                 <ul className="space-y-3 text-sm text-gray-300 mb-8">
-                                    <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-primary" /> {plan.ram} RAM</li>
-                                    <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-primary" /> {plan.cpu} CPU</li>
-                                    <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-primary" /> {plan.disk} Disk</li>
+                                    <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-primary" /> {plan.ram >= 1024 ? `${(plan.ram / 1024).toFixed(0)} GB` : `${plan.ram} MB`} RAM</li>
+                                    <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-primary" /> {plan.cpu}% CPU</li>
+                                    <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-primary" /> {plan.disk >= 1024 ? `${(plan.disk / 1024).toFixed(0)} GB` : `${plan.disk} MB`} Disk</li>
                                     <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-primary" /> Plugin Installer</li>
                                     <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-primary" /> DDoS Protection</li>
                                 </ul>
@@ -222,6 +232,19 @@ export default function LandingPage() {
                                 </Link>
                             </motion.div>
                         ))}
+                        {plans.length === 0 && (
+                            <>
+                                {[0, 1, 2, 3].map((i) => (
+                                    <div key={i} className="glass-card p-8 animate-pulse">
+                                        <div className="h-6 w-24 bg-white/10 rounded mb-3" />
+                                        <div className="h-10 w-32 bg-white/10 rounded mb-6" />
+                                        <div className="space-y-3">
+                                            {[0, 1, 2, 3, 4].map((j) => <div key={j} className="h-4 bg-white/5 rounded" />)}
+                                        </div>
+                                    </div>
+                                ))}
+                            </>
+                        )}
                     </div>
                 </div>
             </section>
