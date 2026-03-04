@@ -52,7 +52,7 @@ export default function SupportPage() {
                 <div className="space-y-4">
                     {[
                         { q: 'How do I create a server?', a: 'Go to Plans, select a plan, choose your game, and click Deploy. Your server will be ready in seconds.' },
-                        { q: 'How do free credits work?', a: 'Go to Earn Credits, watch a short ad, and claim credits. Credits can be used for free plan servers.' },
+                        { q: 'How do free credits work?', a: 'Go to Earn Credits, watch a short ad, and claim credits. Credits keep your free plan server running — if credits run out, the server will be suspended.' },
                         { q: 'What payment methods are accepted?', a: 'We accept Razorpay, Cashfree, UPI, and account balance. Check the Billing page for available gateways.' },
                         { q: 'My server is suspended, what do I do?', a: 'Server suspension is due to expired payment. Go to Billing and complete the renewal payment.' },
                     ].map((faq, i) => (

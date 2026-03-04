@@ -186,28 +186,8 @@ export class ServersService {
             }
         }
 
-        // ---------- Free plan: require credits ----------
-        if (plan.type === PlanType.FREE) {
-            const credits = user.credits?.amount || 0;
-            if (credits <= 0) {
-                throw new BadRequestException('You need credits to create a free server. Earn credits by watching ads.');
-            }
-
-            // Deduct 1 credit for free server creation
-            const deducted = await this.prisma.$transaction(async (tx) => {
-                const cred = await tx.credit.findUnique({ where: { userId } });
-                if (!cred || cred.amount < 1) return false;
-                await tx.credit.update({
-                    where: { userId },
-                    data: { amount: { decrement: 1 } },
-                });
-                return true;
-            });
-
-            if (!deducted) {
-                throw new BadRequestException('Failed to deduct credits. Please try again.');
-            }
-        }
+        // Free plan: no upfront cost — credits are only consumed for renewal
+        // (see CreditsService.checkFreeServerCredits cron job)
 
         // ---------- Create Pterodactyl account ----------
         await this.authService.ensurePterodactylAccount(user);
