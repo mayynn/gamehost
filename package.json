@@ -1,0 +1,16 @@
+{
+  "name": "gamehost-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GameHost — Game Server Hosting Platform",
+  "scripts": {
+    "install": "bash install.sh",
+    "update": "bash update.sh",
+    "restart": "bash restart.sh",
+    "backup": "bash backup.sh",
+    "logs": "docker compose logs -f",
+    "logs:backend": "docker compose logs -f backend",
+    "logs:frontend": "docker compose logs -f frontend",
+    "status": "docker compose ps"
+  }
+}
