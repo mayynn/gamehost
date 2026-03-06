@@ -149,4 +149,136 @@ export class ServersController {
     renewServer(@CurrentUser() user: any, @Param('id') id: string) {
         return this.serversService.renewServer(user.id, id);
     }
+
+    // ========== FILE OPERATIONS (NEW) ==========
+
+    @Post(':id/files/compress')
+    compressFiles(@CurrentUser() user: any, @Param('id') id: string, @Body() body: { root: string; files: string[] }) {
+        return this.serversService.compressFiles(user.id, id, body.root, body.files);
+    }
+
+    @Post(':id/files/decompress')
+    decompressFile(@CurrentUser() user: any, @Param('id') id: string, @Body() body: { root: string; file: string }) {
+        return this.serversService.decompressFile(user.id, id, body.root, body.file);
+    }
+
+    @Get(':id/files/download')
+    getFileDownloadUrl(@CurrentUser() user: any, @Param('id') id: string, @Query('file') file: string) {
+        if (!file) throw new BadRequestException('File path is required');
+        return this.serversService.getFileDownloadUrl(user.id, id, file);
+    }
+
+    @Post(':id/files/copy')
+    copyFile(@CurrentUser() user: any, @Param('id') id: string, @Body() body: { location: string }) {
+        return this.serversService.copyFile(user.id, id, body.location);
+    }
+
+    @Post(':id/files/chmod')
+    chmodFiles(@CurrentUser() user: any, @Param('id') id: string, @Body() body: { root: string; files: { file: string; mode: string }[] }) {
+        return this.serversService.chmodFiles(user.id, id, body.root, body.files);
+    }
+
+    @Post(':id/files/pull')
+    pullFile(@CurrentUser() user: any, @Param('id') id: string, @Body() body: { url: string; directory: string; filename?: string }) {
+        return this.serversService.pullFile(user.id, id, body.url, body.directory, body.filename);
+    }
+
+    // ========== BACKUP OPERATIONS (NEW) ==========
+
+    @Post(':id/backups/:backupId/restore')
+    restoreBackup(@CurrentUser() user: any, @Param('id') id: string, @Param('backupId') backupId: string, @Body() body: { truncate?: boolean }) {
+        return this.serversService.restoreBackup(user.id, id, backupId, body?.truncate);
+    }
+
+    @Post(':id/backups/:backupId/lock')
+    toggleBackupLock(@CurrentUser() user: any, @Param('id') id: string, @Param('backupId') backupId: string) {
+        return this.serversService.toggleBackupLock(user.id, id, backupId);
+    }
+
+    // ========== DATABASE OPERATIONS (NEW) ==========
+
+    @Post(':id/databases/:dbId/rotate-password')
+    rotateDatabasePassword(@CurrentUser() user: any, @Param('id') id: string, @Param('dbId') dbId: string) {
+        return this.serversService.rotateDatabasePassword(user.id, id, dbId);
+    }
+
+    // ========== SERVER SETTINGS (NEW) ==========
+
+    @Post(':id/settings/rename')
+    renameServer(@CurrentUser() user: any, @Param('id') id: string, @Body() body: { name: string }) {
+        if (!body.name || body.name.trim().length < 2) throw new BadRequestException('Name must be at least 2 characters');
+        return this.serversService.renameServer(user.id, id, body.name.trim());
+    }
+
+    @Put(':id/settings/docker-image')
+    changeDockerImage(@CurrentUser() user: any, @Param('id') id: string, @Body() body: { docker_image: string }) {
+        if (!body.docker_image) throw new BadRequestException('Docker image is required');
+        return this.serversService.changeDockerImage(user.id, id, body.docker_image);
+    }
+
+    // ========== SCHEDULES (NEW) ==========
+
+    @Get(':id/schedules')
+    listSchedules(@CurrentUser() user: any, @Param('id') id: string) {
+        return this.serversService.listSchedules(user.id, id);
+    }
+
+    @Get(':id/schedules/:scheduleId')
+    getSchedule(@CurrentUser() user: any, @Param('id') id: string, @Param('scheduleId') scheduleId: string) {
+        return this.serversService.getSchedule(user.id, id, parseInt(scheduleId));
+    }
+
+    @Post(':id/schedules')
+    createSchedule(@CurrentUser() user: any, @Param('id') id: string, @Body() body: {
+        name: string; is_active: boolean; minute: string; hour: string;
+        day_of_week: string; day_of_month: string; month: string;
+    }) {
+        return this.serversService.createSchedule(user.id, id, body);
+    }
+
+    @Post(':id/schedules/:scheduleId')
+    updateSchedule(@CurrentUser() user: any, @Param('id') id: string, @Param('scheduleId') scheduleId: string, @Body() body: {
+        name: string; is_active: boolean; minute: string; hour: string;
+        day_of_week: string; day_of_month: string; month: string;
+    }) {
+        return this.serversService.updateSchedule(user.id, id, parseInt(scheduleId), body);
+    }
+
+    @Delete(':id/schedules/:scheduleId')
+    deleteSchedule(@CurrentUser() user: any, @Param('id') id: string, @Param('scheduleId') scheduleId: string) {
+        return this.serversService.deleteSchedule(user.id, id, parseInt(scheduleId));
+    }
+
+    @Post(':id/schedules/:scheduleId/execute')
+    executeSchedule(@CurrentUser() user: any, @Param('id') id: string, @Param('scheduleId') scheduleId: string) {
+        return this.serversService.executeSchedule(user.id, id, parseInt(scheduleId));
+    }
+
+    @Post(':id/schedules/:scheduleId/tasks')
+    createScheduleTask(@CurrentUser() user: any, @Param('id') id: string, @Param('scheduleId') scheduleId: string, @Body() body: {
+        action: 'command' | 'power' | 'backup'; payload: string;
+        time_offset: number; continue_on_failure?: boolean;
+    }) {
+        return this.serversService.createScheduleTask(user.id, id, parseInt(scheduleId), body);
+    }
+
+    @Post(':id/schedules/:scheduleId/tasks/:taskId')
+    updateScheduleTask(@CurrentUser() user: any, @Param('id') id: string, @Param('scheduleId') scheduleId: string, @Param('taskId') taskId: string, @Body() body: {
+        action: 'command' | 'power' | 'backup'; payload: string;
+        time_offset: number; continue_on_failure?: boolean;
+    }) {
+        return this.serversService.updateScheduleTask(user.id, id, parseInt(scheduleId), parseInt(taskId), body);
+    }
+
+    @Delete(':id/schedules/:scheduleId/tasks/:taskId')
+    deleteScheduleTask(@CurrentUser() user: any, @Param('id') id: string, @Param('scheduleId') scheduleId: string, @Param('taskId') taskId: string) {
+        return this.serversService.deleteScheduleTask(user.id, id, parseInt(scheduleId), parseInt(taskId));
+    }
+
+    // ========== ACTIVITY LOG (NEW) ==========
+
+    @Get(':id/activity')
+    getActivityLog(@CurrentUser() user: any, @Param('id') id: string) {
+        return this.serversService.getActivityLog(user.id, id);
+    }
 }

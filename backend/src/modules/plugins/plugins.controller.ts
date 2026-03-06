@@ -46,16 +46,29 @@ export class PluginsController {
         @Query('query') query: string,
         @Query('limit') limit?: string,
         @Query('offset') offset?: string,
-        @Query('project_type') projectType?: 'plugin' | 'mod',
+        @Query('project_type') projectType?: string,
         @Query('loaders') loaders?: string,
+        @Query('categories') categories?: string,
+        @Query('game_versions') gameVersions?: string,
+        @Query('index') index?: string,
     ) {
         const parsedLoaders = loaders ? JSON.parse(loaders) as string[] : undefined;
+        const parsedCategories = categories ? JSON.parse(categories) as string[] : undefined;
+        const parsedGameVersions = gameVersions ? JSON.parse(gameVersions) as string[] : undefined;
         return this.pluginsService.searchModrinth(query, {
             limit: parseInt(limit || '20'),
             offset: parseInt(offset || '0'),
             projectType: projectType || 'mod',
             loaders: parsedLoaders,
+            categories: parsedCategories,
+            gameVersions: parsedGameVersions,
+            index,
         });
+    }
+
+    @Get('modrinth/tags')
+    getModrinthTags() {
+        return this.pluginsService.getModrinthTags();
     }
 
     @Get('modrinth/project/:id')
@@ -88,8 +101,28 @@ export class PluginsController {
 
     // --- Spiget (search is public, no ownership needed) ---
     @Get('spiget/search')
-    searchSpiget(@Query('query') query: string, @Query('page') page?: string) {
-        return this.pluginsService.searchSpiget(query, parseInt(page || '1'));
+    searchSpiget(
+        @Query('query') query: string,
+        @Query('page') page?: string,
+        @Query('size') size?: string,
+        @Query('categoryId') categoryId?: string,
+    ) {
+        const parsedCategoryId = categoryId ? parseInt(categoryId) : undefined;
+        return this.pluginsService.searchSpiget(query, parseInt(page || '1'), parseInt(size || '20'), parsedCategoryId);
+    }
+
+    @Get('spiget/categories')
+    getSpigetCategories() {
+        return this.pluginsService.getSpigetCategories();
+    }
+
+    @Get('spiget/categories/:id/resources')
+    getSpigetCategoryResources(
+        @Param('id') id: string,
+        @Query('page') page?: string,
+        @Query('size') size?: string,
+    ) {
+        return this.pluginsService.getSpigetCategoryResources(parseInt(id), parseInt(page || '1'), parseInt(size || '20'));
     }
 
     @Get('spiget/resource/:id')
@@ -106,5 +139,25 @@ export class PluginsController {
     async installSpiget(@CurrentUser() user: any, @Param('serverUuid') uuid: string, @Body('resourceId') resourceId: number) {
         await this.verifyOwnership(user, uuid);
         return this.pluginsService.installFromSpiget(uuid, resourceId);
+    }
+
+    @Post(':serverUuid/update-one')
+    async updateOne(
+        @CurrentUser() user: any,
+        @Param('serverUuid') uuid: string,
+        @Body('fileName') fileName: string,
+    ) {
+        await this.verifyOwnership(user, uuid);
+        return this.pluginsService.updateOnePlugin(uuid, fileName);
+    }
+
+    @Post(':serverUuid/update-all')
+    async updateAll(
+        @CurrentUser() user: any,
+        @Param('serverUuid') uuid: string,
+        @Body('source') source?: 'modrinth' | 'spiget',
+    ) {
+        await this.verifyOwnership(user, uuid);
+        return this.pluginsService.updateAllPlugins(uuid, source);
     }
 }

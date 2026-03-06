@@ -20,6 +20,12 @@ export class ServersService {
         private cloudflare: CloudflareService,
     ) { }
 
+    private getClientServerRef(server: { pteroIdentifier?: string | null; pteroUuid?: string | null }): string {
+        const ref = server.pteroIdentifier || server.pteroUuid;
+        if (!ref) throw new BadRequestException('Server not linked to Pterodactyl');
+        return ref;
+    }
+
     // ---------- Verify ownership by pterodactyl UUID ----------
     async verifyOwnershipByUuid(userId: string, pteroUuid: string) {
         const server = await this.prisma.server.findFirst({
@@ -41,10 +47,10 @@ export class ServersService {
         const enriched = await Promise.all(
             servers.map(async (server) => {
                 let resources = null;
-                if (server.pteroUuid) {
+                if (server.pteroUuid || server.pteroIdentifier) {
                     try {
                         resources = await Promise.race([
-                            this.pterodactylClient.getServerResources(server.pteroUuid),
+                            this.pterodactylClient.getServerResources(this.getClientServerRef(server)),
                             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
                         ]);
                     } catch {
@@ -70,12 +76,12 @@ export class ServersService {
         let pteroData = null;
         let resources = null;
 
-        if (server.pteroUuid) {
+        if (server.pteroUuid || server.pteroIdentifier) {
             try {
-                pteroData = await this.pterodactylClient.getServer(server.pteroUuid);
-                resources = await this.pterodactylClient.getServerResources(server.pteroUuid);
+                pteroData = await this.pterodactylClient.getServer(this.getClientServerRef(server));
+                resources = await this.pterodactylClient.getServerResources(this.getClientServerRef(server));
             } catch (e) {
-                this.logger.warn(`Failed to fetch Pterodactyl data for ${server.pteroUuid}: ${e.message}`);
+                this.logger.warn(`Failed to fetch Pterodactyl data for ${this.getClientServerRef(server)}: ${e.message}`);
             }
         }
 
@@ -398,99 +404,101 @@ export class ServersService {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
         if (!server) throw new NotFoundException('Server not found');
         if (server.status === ServerStatus.SUSPENDED) throw new BadRequestException('Server is suspended');
-        if (!server.pteroUuid) throw new BadRequestException('Server not linked to Pterodactyl');
+        if (server.status === ServerStatus.EXPIRED) throw new BadRequestException('Server has expired. Please renew it first.');
+        if (server.status === ServerStatus.DELETED) throw new BadRequestException('Server has been deleted');
+        if (!server.pteroUuid && !server.pteroIdentifier) throw new BadRequestException('Server not linked to Pterodactyl');
 
-        return this.pterodactylClient.sendPowerAction(server.pteroUuid, action);
+        return this.pterodactylClient.sendPowerAction(this.getClientServerRef(server), action);
     }
 
     // ---------- Console ----------
     async getConsoleWebsocket(userId: string, serverId: string) {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
-        if (!server?.pteroUuid) throw new NotFoundException('Server not found');
-        return this.pterodactylClient.getWebsocketCredentials(server.pteroUuid);
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.getWebsocketCredentials(this.getClientServerRef(server));
     }
 
     async sendConsoleCommand(userId: string, serverId: string, command: string) {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
-        if (!server?.pteroUuid) throw new NotFoundException('Server not found');
-        return this.pterodactylClient.sendCommand(server.pteroUuid, command);
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.sendCommand(this.getClientServerRef(server), command);
     }
 
     // ---------- Files ----------
     async listFiles(userId: string, serverId: string, directory = '/') {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
-        if (!server?.pteroUuid) throw new NotFoundException('Server not found');
-        return this.pterodactylClient.listFiles(server.pteroUuid, directory);
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.listFiles(this.getClientServerRef(server), directory);
     }
 
     async getFileContents(userId: string, serverId: string, file: string) {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
-        if (!server?.pteroUuid) throw new NotFoundException('Server not found');
-        return this.pterodactylClient.getFileContents(server.pteroUuid, file);
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.getFileContents(this.getClientServerRef(server), file);
     }
 
     async writeFile(userId: string, serverId: string, file: string, content: string) {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
-        if (!server?.pteroUuid) throw new NotFoundException('Server not found');
-        return this.pterodactylClient.writeFile(server.pteroUuid, file, content);
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.writeFile(this.getClientServerRef(server), file, content);
     }
 
     async deleteFiles(userId: string, serverId: string, root: string, files: string[]) {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
-        if (!server?.pteroUuid) throw new NotFoundException('Server not found');
-        return this.pterodactylClient.deleteFiles(server.pteroUuid, root, files);
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.deleteFiles(this.getClientServerRef(server), root, files);
     }
 
     async getUploadUrl(userId: string, serverId: string) {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
-        if (!server?.pteroUuid) throw new NotFoundException('Server not found');
-        return this.pterodactylClient.uploadFileUrl(server.pteroUuid);
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.uploadFileUrl(this.getClientServerRef(server));
     }
 
     // ---------- Backups ----------
     async listBackups(userId: string, serverId: string) {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
-        if (!server?.pteroUuid) throw new NotFoundException('Server not found');
-        return this.pterodactylClient.listBackups(server.pteroUuid);
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.listBackups(this.getClientServerRef(server));
     }
 
     async createBackup(userId: string, serverId: string) {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
-        if (!server?.pteroUuid) throw new NotFoundException('Server not found');
-        return this.pterodactylClient.createBackup(server.pteroUuid);
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.createBackup(this.getClientServerRef(server));
     }
 
     // ---------- Databases ----------
     async listDatabases(userId: string, serverId: string) {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
-        if (!server?.pteroUuid) throw new NotFoundException('Server not found');
-        return this.pterodactylClient.listDatabases(server.pteroUuid);
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.listDatabases(this.getClientServerRef(server));
     }
 
     async createDatabase(userId: string, serverId: string, dbName: string) {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
-        if (!server?.pteroUuid) throw new NotFoundException('Server not found');
-        return this.pterodactylClient.createDatabase(server.pteroUuid, dbName, '%');
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.createDatabase(this.getClientServerRef(server), dbName, '%');
     }
 
     // ---------- Network ----------
     async getNetwork(userId: string, serverId: string) {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
-        if (!server?.pteroUuid) throw new NotFoundException('Server not found');
-        return this.pterodactylClient.listAllocations(server.pteroUuid);
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.listAllocations(this.getClientServerRef(server));
     }
 
     // ---------- Startup ----------
     async getStartup(userId: string, serverId: string) {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
-        if (!server?.pteroUuid) throw new NotFoundException('Server not found');
-        return this.pterodactylClient.getStartup(server.pteroUuid);
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.getStartup(this.getClientServerRef(server));
     }
 
     async updateStartupVariable(userId: string, serverId: string, key: string, value: string) {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
-        if (!server?.pteroUuid) throw new NotFoundException('Server not found');
-        return this.pterodactylClient.updateStartupVariable(server.pteroUuid, key, value);
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.updateStartupVariable(this.getClientServerRef(server), key, value);
     }
 
     // ---------- Delete ----------
@@ -519,44 +527,44 @@ export class ServersService {
     // ---------- Delete Backup ----------
     async deleteBackup(userId: string, serverId: string, backupId: string) {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
-        if (!server?.pteroUuid) throw new NotFoundException('Server not found');
-        return this.pterodactylClient.deleteBackup(server.pteroUuid, backupId);
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.deleteBackup(this.getClientServerRef(server), backupId);
     }
 
     // ---------- Download Backup ----------
     async downloadBackup(userId: string, serverId: string, backupId: string) {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
-        if (!server?.pteroUuid) throw new NotFoundException('Server not found');
-        const url = await this.pterodactylClient.downloadBackup(server.pteroUuid, backupId);
+        if (!server) throw new NotFoundException('Server not found');
+        const url = await this.pterodactylClient.downloadBackup(this.getClientServerRef(server), backupId);
         return { url };
     }
 
     // ---------- Delete Database (by DB id) ----------
     async deleteDatabase2(userId: string, serverId: string, databaseId: string) {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
-        if (!server?.pteroUuid) throw new NotFoundException('Server not found');
-        return this.pterodactylClient.deleteDatabase(server.pteroUuid, databaseId);
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.deleteDatabase(this.getClientServerRef(server), databaseId);
     }
 
     // ---------- Rename File ----------
     async renameFile(userId: string, serverId: string, root: string, from: string, to: string) {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
-        if (!server?.pteroUuid) throw new NotFoundException('Server not found');
-        return this.pterodactylClient.renameFile(server.pteroUuid, root, from, to);
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.renameFile(this.getClientServerRef(server), root, from, to);
     }
 
     // ---------- Create Directory ----------
     async createDirectory(userId: string, serverId: string, root: string, name: string) {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
-        if (!server?.pteroUuid) throw new NotFoundException('Server not found');
-        return this.pterodactylClient.createDirectory(server.pteroUuid, root, name);
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.createDirectory(this.getClientServerRef(server), root, name);
     }
 
     // ---------- Reinstall ----------
     async reinstallServer(userId: string, serverId: string) {
         const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
-        if (!server?.pteroUuid) throw new NotFoundException('Server not found');
-        return this.pterodactylClient.reinstall(server.pteroUuid);
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.reinstall(this.getClientServerRef(server));
     }
 
     // ---------- Server Renewal Cost ----------
@@ -699,5 +707,167 @@ export class ServersService {
 
         this.logger.log(`Server ${server.id} renewed until ${newExpiry.toISOString()} (charged ₹${price})`);
         return updated;
+    }
+
+    // ---------- File Compress ----------
+    async compressFiles(userId: string, serverId: string, root: string, files: string[]) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.compressFiles(this.getClientServerRef(server), root, files);
+    }
+
+    // ---------- File Decompress ----------
+    async decompressFile(userId: string, serverId: string, root: string, file: string) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.decompressFile(this.getClientServerRef(server), root, file);
+    }
+
+    // ---------- File Download ----------
+    async getFileDownloadUrl(userId: string, serverId: string, file: string) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+        const url = await this.pterodactylClient.getFileDownloadUrl(this.getClientServerRef(server), file);
+        return { url };
+    }
+
+    // ---------- File Copy ----------
+    async copyFile(userId: string, serverId: string, location: string) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.copyFile(this.getClientServerRef(server), location);
+    }
+
+    // ---------- File Chmod ----------
+    async chmodFiles(userId: string, serverId: string, root: string, files: { file: string; mode: string }[]) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.chmodFiles(this.getClientServerRef(server), root, files);
+    }
+
+    // ---------- File Pull ----------
+    async pullFile(userId: string, serverId: string, url: string, directory: string, filename?: string) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.pullFile(this.getClientServerRef(server), url, directory, filename);
+    }
+
+    // ---------- Backup Restore ----------
+    async restoreBackup(userId: string, serverId: string, backupId: string, truncate = false) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.restoreBackup(this.getClientServerRef(server), backupId, truncate);
+    }
+
+    // ---------- Backup Lock Toggle ----------
+    async toggleBackupLock(userId: string, serverId: string, backupId: string) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.toggleBackupLock(this.getClientServerRef(server), backupId);
+    }
+
+    // ---------- Database Rotate Password ----------
+    async rotateDatabasePassword(userId: string, serverId: string, databaseId: string) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.rotateDatabasePassword(this.getClientServerRef(server), databaseId);
+    }
+
+    // ---------- Server Rename ----------
+    async renameServer(userId: string, serverId: string, name: string) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+
+        const renamed = await this.pterodactylClient.renameServer(this.getClientServerRef(server), name);
+        if (!renamed) throw new BadRequestException('Failed to rename server on Pterodactyl');
+
+        // Also update local database
+        await this.prisma.server.update({
+            where: { id: serverId },
+            data: { name },
+        });
+
+        return { success: true, name };
+    }
+
+    // ---------- Change Docker Image ----------
+    async changeDockerImage(userId: string, serverId: string, dockerImage: string) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.changeDockerImage(this.getClientServerRef(server), dockerImage);
+    }
+
+    // ---------- Schedules ----------
+    async listSchedules(userId: string, serverId: string) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.listSchedules(this.getClientServerRef(server));
+    }
+
+    async getSchedule(userId: string, serverId: string, scheduleId: number) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.getSchedule(this.getClientServerRef(server), scheduleId);
+    }
+
+    async createSchedule(userId: string, serverId: string, schedule: {
+        name: string; is_active: boolean; minute: string; hour: string;
+        day_of_week: string; day_of_month: string; month: string;
+    }) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.createSchedule(this.getClientServerRef(server), schedule);
+    }
+
+    async updateSchedule(userId: string, serverId: string, scheduleId: number, schedule: {
+        name: string; is_active: boolean; minute: string; hour: string;
+        day_of_week: string; day_of_month: string; month: string;
+    }) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.updateSchedule(this.getClientServerRef(server), scheduleId, schedule);
+    }
+
+    async deleteSchedule(userId: string, serverId: string, scheduleId: number) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.deleteSchedule(this.getClientServerRef(server), scheduleId);
+    }
+
+    async executeSchedule(userId: string, serverId: string, scheduleId: number) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.executeSchedule(this.getClientServerRef(server), scheduleId);
+    }
+
+    async createScheduleTask(userId: string, serverId: string, scheduleId: number, task: {
+        action: 'command' | 'power' | 'backup'; payload: string;
+        time_offset: number; continue_on_failure?: boolean;
+    }) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.createScheduleTask(this.getClientServerRef(server), scheduleId, task);
+    }
+
+    async updateScheduleTask(userId: string, serverId: string, scheduleId: number, taskId: number, task: {
+        action: 'command' | 'power' | 'backup'; payload: string;
+        time_offset: number; continue_on_failure?: boolean;
+    }) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.updateScheduleTask(this.getClientServerRef(server), scheduleId, taskId, task);
+    }
+
+    async deleteScheduleTask(userId: string, serverId: string, scheduleId: number, taskId: number) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.deleteScheduleTask(this.getClientServerRef(server), scheduleId, taskId);
+    }
+
+    // ---------- Activity Log ----------
+    async getActivityLog(userId: string, serverId: string) {
+        const server = await this.prisma.server.findFirst({ where: { id: serverId, userId } });
+        if (!server) throw new NotFoundException('Server not found');
+        return this.pterodactylClient.getActivityLog(this.getClientServerRef(server));
     }
 }

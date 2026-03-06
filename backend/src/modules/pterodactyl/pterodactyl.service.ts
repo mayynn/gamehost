@@ -20,7 +20,7 @@ export class PterodactylService {
             baseURL: `${baseURL}/api/application`,
             headers: {
                 Authorization: `Bearer ${apiKey}`,
-                Accept: 'application/json',
+                Accept: 'application/vnd.pterodactyl.v1+json',
                 'Content-Type': 'application/json',
             },
             timeout: 15000,

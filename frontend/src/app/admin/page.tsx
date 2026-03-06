@@ -6,13 +6,14 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
+import Link from 'next/link';
 import {
   LayoutDashboard, Users, Server, Shield, Package, Cloud, IndianRupee,
   Settings, FileText, Loader2, Trash2, Edit3, Plus, Crown, Ban, CheckCircle,
   XCircle, X, ChevronLeft, ChevronRight, RefreshCw, Search, Eye, Activity,
   AlertTriangle, Monitor, Zap, Globe, Database, HardDrive, Cpu, ArrowUpRight,
   UserCheck, ServerCrash, TrendingUp, Clock, Filter, MoreVertical, Copy,
-  ExternalLink, Fingerprint, Link2
+  ExternalLink, Fingerprint, Link2, ArrowLeft
 } from 'lucide-react';
 
 /* ═══════════ SIDEBAR CONFIG ═══════════ */
@@ -54,6 +55,10 @@ export default function AdminPage() {
     <div className="flex min-h-[calc(100vh-80px)] gap-0">
       {/* ─── Sidebar ─── */}
       <aside className="w-[220px] shrink-0 py-4 pr-3 space-y-5 hidden lg:block">
+        {/* Back to Dashboard */}
+        <Link href="/dashboard" className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-[13px] font-medium text-gray-500 hover:text-white hover:bg-white/[0.03] transition-all mb-2" style={{ border: '1px solid rgba(255,255,255,0.04)' }}>
+          <ArrowLeft className="w-4 h-4" /> Dashboard
+        </Link>
         {NAV.map(g => (
           <div key={g.group}>
             <p className="text-[10px] font-semibold text-gray-600 uppercase tracking-widest px-3 mb-1.5">{g.group}</p>
@@ -74,6 +79,9 @@ export default function AdminPage() {
 
       {/* ─── Mobile Tab Bar ─── */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 flex gap-1 p-2 overflow-x-auto scrollbar-none" style={{ background: 'rgba(6,10,20,0.95)', borderTop: '1px solid rgba(255,255,255,0.06)', backdropFilter: 'blur(20px)' }}>
+        <Link href="/dashboard" className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg text-[10px] font-medium whitespace-nowrap text-gray-500">
+          <ArrowLeft className="w-4 h-4" />Back
+        </Link>
         {NAV.flatMap(g => g.items).map(item => (
           <button key={item.id} onClick={() => setTab(item.id)}
             className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg text-[10px] font-medium whitespace-nowrap transition-all ${tab === item.id ? 'text-primary' : 'text-gray-500'}`}
@@ -110,7 +118,7 @@ function DashboardTab() {
 
   useEffect(() => {
     adminApi.dashboard().then(r => setStats(r.data)).catch(() => {});
-    adminApi.auditLogs(1).then(r => setAudit((r.data?.data || r.data || []).slice(0, 8))).catch(() => {});
+    adminApi.auditLogs(1).then(r => setAudit((r.data?.logs || []).slice(0, 8))).catch(() => {});
   }, []);
 
   if (!stats) return <Loader />;
@@ -119,9 +127,10 @@ function DashboardTab() {
     { label: 'Total Users', value: stats.totalUsers ?? stats.users ?? 0, icon: Users, color: 'cyan' },
     { label: 'Total Servers', value: stats.totalServers ?? stats.servers ?? 0, icon: Server, color: 'green' },
     { label: 'Active Servers', value: stats.activeServers ?? 0, icon: Activity, color: 'green' },
-    { label: 'Revenue', value: `₹${stats.totalRevenue ?? 0}`, icon: TrendingUp, color: 'yellow' },
-    { label: 'Pending UPI', value: stats.pendingUpi ?? stats.pendingPayments ?? 0, icon: IndianRupee, color: 'orange' },
-    { label: 'VPS Instances', value: stats.totalVps ?? stats.vpsInstances ?? 0, icon: Cloud, color: 'purple' },
+    { label: 'Revenue', value: `₹${stats.revenue ?? stats.totalRevenue ?? 0}`, icon: TrendingUp, color: 'yellow' },
+    { label: 'Pending UPI', value: stats.pendingUpi ?? 0, icon: IndianRupee, color: 'orange' },
+    { label: 'Suspended', value: stats.suspendedServers ?? 0, icon: ServerCrash, color: 'accent' },
+    { label: 'Total Balance', value: `₹${stats.totalBalanceAcrossUsers ?? 0}`, icon: Database, color: 'purple' },
   ];
 
   return (
@@ -175,7 +184,7 @@ function UsersTab() {
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
-    try { const r = await adminApi.users(page); setUsers(r.data?.data || r.data || []); setTotal(r.data?.total || 0); }
+    try { const r = await adminApi.users(page); setUsers(r.data?.users || r.data?.data || []); setTotal(r.data?.total || 0); }
     catch {} finally { setLoading(false); }
   }, [page]);
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
@@ -196,9 +205,12 @@ function UsersTab() {
   return (
     <div className="space-y-4">
       <TabHeader title="Users" subtitle={`${total} registered users`} icon={Users}>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
-          <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search users..." className="input-field pl-9 text-sm w-56" />
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+            <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search users..." className="input-field pl-9 text-sm w-56" />
+          </div>
+          <button onClick={fetchUsers} className="btn-secondary text-sm flex items-center gap-1.5 py-2"><RefreshCw className="w-3.5 h-3.5" /> Refresh</button>
         </div>
       </TabHeader>
 
@@ -251,9 +263,9 @@ function UsersTab() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <MiniStat label="Servers" value={detail._count?.servers ?? detail.servers?.length ?? 0} />
-                  <MiniStat label="Balance" value={`₹${detail.balance ?? 0}`} />
-                  <MiniStat label="Credits" value={detail.credits ?? 0} />
-                  <MiniStat label="Ptero ID" value={detail.pteroUserId ?? '—'} />
+                  <MiniStat label="Balance" value={`₹${detail.balance?.amount ?? 0}`} />
+                  <MiniStat label="Credits" value={detail.credits?.amount ?? 0} />
+                  <MiniStat label="Ptero ID" value={detail.pterodactylAccount?.pteroUserId ?? '—'} />
                 </div>
                 {detail.lastLoginIp && (
                   <div className="neo-card p-3 space-y-1">
@@ -263,6 +275,49 @@ function UsersTab() {
                   </div>
                 )}
                 <p className="text-[11px] text-gray-600">Joined {detail.createdAt ? new Date(detail.createdAt).toLocaleDateString() : '—'}</p>
+
+                {/* Payment History */}
+                {detail.payments && detail.payments.length > 0 && (
+                  <div className="neo-card overflow-hidden">
+                    <div className="px-3 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                      <p className="text-[11px] text-gray-500 font-semibold uppercase tracking-wider">Recent Payments</p>
+                    </div>
+                    <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+                      {detail.payments.slice(0, 10).map((p: any) => (
+                        <div key={p.id} className="px-3 py-2 flex items-center justify-between">
+                          <div>
+                            <p className="text-[12px] text-white font-medium">₹{p.amount}</p>
+                            <p className="text-[10px] text-gray-600">{p.gateway || 'UPI'} · {timeAgo(p.createdAt)}</p>
+                          </div>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-md font-semibold" style={
+                            p.status === 'COMPLETED' ? { background: 'rgba(16,185,129,0.08)', color: '#34d399', border: '1px solid rgba(16,185,129,0.15)' }
+                            : p.status === 'PENDING' ? { background: 'rgba(234,179,8,0.08)', color: '#fbbf24', border: '1px solid rgba(234,179,8,0.15)' }
+                            : { background: 'rgba(239,68,68,0.08)', color: '#f87171', border: '1px solid rgba(239,68,68,0.15)' }
+                          }>{p.status}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Servers */}
+                {detail.servers && detail.servers.length > 0 && (
+                  <div className="neo-card overflow-hidden">
+                    <div className="px-3 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                      <p className="text-[11px] text-gray-500 font-semibold uppercase tracking-wider">Servers ({detail.servers.length})</p>
+                    </div>
+                    <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+                      {detail.servers.map((s: any) => (
+                        <div key={s.id} className="px-3 py-2 flex items-center gap-2">
+                          <Server className="w-3 h-3 text-primary shrink-0" />
+                          <p className="text-[12px] text-white truncate flex-1">{s.name}</p>
+                          <span className="text-[10px] text-gray-500">{s.status}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex gap-2 pt-2">
                   <button onClick={() => { setRole(detail.id, detail.role === 'ADMIN' ? 'USER' : 'ADMIN'); setDetail(null); }} className="btn-secondary text-sm flex-1 flex items-center justify-center gap-1.5"><Crown className="w-3.5 h-3.5" /> Toggle Role</button>
                   <button onClick={() => deleteUser(detail.id)} className="text-sm flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 font-medium transition-colors" style={{ background: 'rgba(239,68,68,0.08)', color: '#f87171', border: '1px solid rgba(239,68,68,0.15)' }}><Trash2 className="w-3.5 h-3.5" /> Delete</button>
@@ -287,7 +342,7 @@ function ServersTab() {
 
   const fetchServers = useCallback(async () => {
     setLoading(true);
-    try { const r = await adminApi.servers(page); setServers(r.data?.data || r.data || []); setTotal(r.data?.total || 0); }
+    try { const r = await adminApi.servers(page); setServers(r.data?.servers || r.data?.data || []); setTotal(r.data?.total || 0); }
     catch {} finally { setLoading(false); }
   }, [page]);
   useEffect(() => { fetchServers(); }, [fetchServers]);
@@ -321,6 +376,7 @@ function ServersTab() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
             <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="input-field pl-9 text-sm w-44" />
           </div>
+          <button onClick={fetchServers} className="btn-secondary text-sm flex items-center gap-1.5 py-2"><RefreshCw className="w-3.5 h-3.5" /> Refresh</button>
         </div>
       </TabHeader>
 
@@ -337,7 +393,11 @@ function ServersTab() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-[13px] text-white font-medium truncate">{s.name}</p>
-                      <p className="text-[11px] text-gray-500 truncate">{s.user?.email || s.userId}</p>
+                      <p className="text-[11px] text-gray-500 truncate">{s.user?.email || s.userId}{s.plan?.name ? ` · ${s.plan.name}` : ''}</p>
+                    </div>
+                    <div className="hidden md:flex items-center gap-2 text-[10px] text-gray-500 mr-2">
+                      {s.plan && <><span>{fmtMB(s.plan.ram)} RAM</span><span>·</span><span>{s.plan.cpu}% CPU</span><span>·</span><span>{fmtMB(s.plan.disk)} Disk</span></>}
+                      {s.expiresAt && <><span>·</span><span>Exp: {new Date(s.expiresAt).toLocaleDateString()}</span></>}
                     </div>
                     <span className="text-[10px] px-2 py-0.5 rounded-md font-semibold" style={{ background: sc.bg, color: sc.text, border: `1px solid ${sc.border}` }}>{s.status}</span>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -380,7 +440,9 @@ function AltsTab() {
 
   return (
     <div className="space-y-4">
-      <TabHeader title="Alt Detection" subtitle="Shared IP analysis" icon={Fingerprint} />
+      <TabHeader title="Alt Detection" subtitle="Shared IP analysis" icon={Fingerprint}>
+        <button onClick={fetch} className="btn-secondary text-sm flex items-center gap-1.5 py-2"><RefreshCw className="w-3.5 h-3.5" /> Refresh</button>
+      </TabHeader>
 
       {loading ? <Loader /> : groups.length === 0 ? (
         <EmptyState icon={UserCheck} message="No alt account groups detected" />
@@ -599,9 +661,9 @@ function PlansTab() {
                     </Field>
                     <Field label="Node Assign Mode">
                       <select value={editing.nodeAssignMode ?? 'ROUND_ROBIN'} onChange={e => setEditing({ ...editing, nodeAssignMode: e.target.value })} className="input-field text-sm">
-                        <option value="ROUND_ROBIN">Round Robin</option>
-                        <option value="FILL_FIRST">Fill First</option>
-                        <option value="RANDOM">Random</option>
+                        <option value="DYNAMIC">Dynamic</option>
+                        <option value="ADMIN_LOCKED">Admin Locked</option>
+                        <option value="USER_SELECTABLE">User Selectable</option>
                       </select>
                     </Field>
                   </div>
@@ -665,7 +727,7 @@ function VpsPlansTab() {
 
   return (
     <div className="space-y-4">
-      <TabHeader title="VPS Plans" subtitle={`${plans.length} plans${vpsStats ? ` · ${vpsStats.activeInstances ?? 0} active instances` : ''}`} icon={Cloud}>
+      <TabHeader title="VPS Plans" subtitle={`${plans.length} plans${vpsStats ? ` · ${vpsStats.activeVps ?? 0} active instances` : ''}`} icon={Cloud}>
         <button onClick={sync} disabled={syncing} className="btn-secondary text-sm flex items-center gap-1.5">
           {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Sync Datalix
         </button>
@@ -853,15 +915,29 @@ function SettingsTab() {
             <h3 className="text-sm font-semibold text-white">{g.title}</h3>
           </div>
           <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
-            {g.keys.map(k => (
-              <div key={k.key} className="px-4 py-3 flex items-center gap-4">
-                <div className="w-44 shrink-0">
-                  <p className="text-[13px] text-gray-300 font-medium">{k.label}</p>
-                  <p className="text-[10px] text-gray-600">{k.hint}</p>
+            {g.keys.map(k => {
+              const isBool = k.hint?.includes('true/false') || ['true','false'].includes((settings[k.key] ?? '').toLowerCase());
+              return (
+                <div key={k.key} className="px-4 py-3 flex items-center gap-4">
+                  <div className="w-44 shrink-0">
+                    <p className="text-[13px] text-gray-300 font-medium">{k.label}</p>
+                    <p className="text-[10px] text-gray-600">{k.hint}</p>
+                  </div>
+                  {isBool ? (
+                    <button onClick={() => update(k.key, (settings[k.key] ?? 'false').toLowerCase() === 'true' ? 'false' : 'true')}
+                      className="relative w-11 h-6 rounded-full transition-colors"
+                      style={{ background: (settings[k.key] ?? 'false').toLowerCase() === 'true' ? 'rgba(0,212,255,0.3)' : 'rgba(255,255,255,0.08)', border: `1px solid ${(settings[k.key] ?? 'false').toLowerCase() === 'true' ? 'rgba(0,212,255,0.4)' : 'rgba(255,255,255,0.1)'}` }}>
+                      <span className="absolute top-0.5 w-4 h-4 rounded-full transition-all" style={{
+                        left: (settings[k.key] ?? 'false').toLowerCase() === 'true' ? '22px' : '3px',
+                        background: (settings[k.key] ?? 'false').toLowerCase() === 'true' ? '#00d4ff' : '#6b7280'
+                      }} />
+                    </button>
+                  ) : (
+                    <input type="text" value={settings[k.key] ?? ''} onChange={e => update(k.key, e.target.value)} className="input-field text-sm flex-1" placeholder={k.hint} />
+                  )}
                 </div>
-                <input type="text" value={settings[k.key] ?? ''} onChange={e => update(k.key, e.target.value)} className="input-field text-sm flex-1" placeholder={k.hint} />
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ))}
@@ -892,25 +968,36 @@ function AuditTab() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
 
   const fetch = useCallback(async () => {
     setLoading(true);
-    try { const r = await adminApi.auditLogs(page); setLogs(r.data?.data || r.data || []); setTotal(r.data?.total || 0); }
+    try { const r = await adminApi.auditLogs(page); setLogs(r.data?.logs || r.data?.data || []); setTotal(r.data?.total || 0); }
     catch {} finally { setLoading(false); }
   }, [page]);
   useEffect(() => { fetch(); }, [fetch]);
 
   return (
     <div className="space-y-4">
-      <TabHeader title="Audit Logs" subtitle="System activity log" icon={FileText} />
+      <TabHeader title="Audit Logs" subtitle="System activity log" icon={FileText}>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+            <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter actions..." className="input-field pl-9 text-sm w-44" />
+          </div>
+          <button onClick={fetch} className="btn-secondary text-sm flex items-center gap-1.5 py-2"><RefreshCw className="w-3.5 h-3.5" /> Refresh</button>
+        </div>
+      </TabHeader>
 
-      {loading ? <Loader /> : logs.length === 0 ? (
-        <EmptyState icon={FileText} message="No audit logs" />
+      {loading ? <Loader /> : (() => {
+        const filtered = search ? logs.filter((l: any) => (l.action + (l.user?.email || '')).toLowerCase().includes(search.toLowerCase())) : logs;
+        return filtered.length === 0 ? (
+        <EmptyState icon={FileText} message={search ? 'No matching logs' : 'No audit logs'} />
       ) : (
         <>
           <div className="neo-card overflow-hidden">
             <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
-              {logs.map((l: any, i: number) => (
+              {filtered.map((l: any, i: number) => (
                 <div key={l.id ?? i} className="px-4 py-3 flex items-start gap-3">
                   <AuditDot action={l.action} />
                   <div className="flex-1 min-w-0">
@@ -927,7 +1014,8 @@ function AuditTab() {
           </div>
           <Pagination page={page} setPage={setPage} total={total} />
         </>
-      )}
+      );
+      })()}
     </div>
   );
 }

@@ -53,6 +53,33 @@ export const serversApi = {
     reinstall: (id: string) => api.post(`/servers/${id}/reinstall`),
     renewalCost: (id: string) => api.get(`/servers/${id}/renewal-cost`),
     renew: (id: string) => api.post(`/servers/${id}/renew`),
+    // File operations
+    compressFiles: (id: string, root: string, files: string[]) => api.post(`/servers/${id}/files/compress`, { root, files }),
+    decompressFile: (id: string, root: string, file: string) => api.post(`/servers/${id}/files/decompress`, { root, file }),
+    downloadFile: (id: string, file: string) => api.get(`/servers/${id}/files/download?file=${encodeURIComponent(file)}`),
+    copyFile: (id: string, location: string) => api.post(`/servers/${id}/files/copy`, { location }),
+    chmodFiles: (id: string, root: string, files: { file: string; mode: string }[]) => api.post(`/servers/${id}/files/chmod`, { root, files }),
+    pullFile: (id: string, url: string, directory: string, filename?: string) => api.post(`/servers/${id}/files/pull`, { url, directory, filename }),
+    // Backup operations
+    restoreBackup: (id: string, backupId: string, truncate = false) => api.post(`/servers/${id}/backups/${backupId}/restore`, { truncate }),
+    toggleBackupLock: (id: string, backupId: string) => api.post(`/servers/${id}/backups/${backupId}/lock`),
+    // Database operations
+    rotateDatabasePassword: (id: string, dbId: string) => api.post(`/servers/${id}/databases/${dbId}/rotate-password`),
+    // Server settings
+    renameServer: (id: string, name: string) => api.post(`/servers/${id}/settings/rename`, { name }),
+    changeDockerImage: (id: string, docker_image: string) => api.put(`/servers/${id}/settings/docker-image`, { docker_image }),
+    // Schedules
+    schedules: (id: string) => api.get(`/servers/${id}/schedules`),
+    getSchedule: (id: string, scheduleId: number) => api.get(`/servers/${id}/schedules/${scheduleId}`),
+    createSchedule: (id: string, data: any) => api.post(`/servers/${id}/schedules`, data),
+    updateSchedule: (id: string, scheduleId: number, data: any) => api.post(`/servers/${id}/schedules/${scheduleId}`, data),
+    deleteSchedule: (id: string, scheduleId: number) => api.delete(`/servers/${id}/schedules/${scheduleId}`),
+    executeSchedule: (id: string, scheduleId: number) => api.post(`/servers/${id}/schedules/${scheduleId}/execute`),
+    createTask: (id: string, scheduleId: number, data: any) => api.post(`/servers/${id}/schedules/${scheduleId}/tasks`, data),
+    updateTask: (id: string, scheduleId: number, taskId: number, data: any) => api.post(`/servers/${id}/schedules/${scheduleId}/tasks/${taskId}`, data),
+    deleteTask: (id: string, scheduleId: number, taskId: number) => api.delete(`/servers/${id}/schedules/${scheduleId}/tasks/${taskId}`),
+    // Activity log
+    activity: (id: string) => api.get(`/servers/${id}/activity`),
 };
 
 // Public stats (no auth)
@@ -96,12 +123,32 @@ export const pluginsApi = {
     detect: (uuid: string) => api.get(`/plugins/${uuid}/detect`),
     installed: (uuid: string) => api.get(`/plugins/${uuid}/installed`),
     checkUpdates: (uuid: string) => api.get(`/plugins/${uuid}/check-updates`),
+    updateOne: (uuid: string, fileName: string) => api.post(`/plugins/${uuid}/update-one`, { fileName }),
+    updateAll: (uuid: string, source?: 'modrinth' | 'spiget') => api.post(`/plugins/${uuid}/update-all`, { source }),
     remove: (uuid: string, file: string) => api.delete(`/plugins/${uuid}/remove/${encodeURIComponent(file)}`),
-    modrinthSearch: (q: string, limit = 20, offset = 0, loaders?: string[]) => {
-        let url = `/plugins/modrinth/search?query=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}&project_type=mod`;
-        if (loaders && loaders.length > 0) url += `&loaders=${encodeURIComponent(JSON.stringify(loaders))}`;
+    modrinthSearch: (
+        q: string,
+        opts?: {
+            limit?: number;
+            offset?: number;
+            projectType?: string;
+            loaders?: string[];
+            categories?: string[];
+            gameVersions?: string[];
+            index?: string;
+        },
+    ) => {
+        const limit = opts?.limit ?? 20;
+        const offset = opts?.offset ?? 0;
+        const projectType = opts?.projectType ?? 'mod';
+        let url = `/plugins/modrinth/search?query=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}&project_type=${encodeURIComponent(projectType)}`;
+        if (opts?.loaders && opts.loaders.length > 0) url += `&loaders=${encodeURIComponent(JSON.stringify(opts.loaders))}`;
+        if (opts?.categories && opts.categories.length > 0) url += `&categories=${encodeURIComponent(JSON.stringify(opts.categories))}`;
+        if (opts?.gameVersions && opts.gameVersions.length > 0) url += `&game_versions=${encodeURIComponent(JSON.stringify(opts.gameVersions))}`;
+        if (opts?.index) url += `&index=${encodeURIComponent(opts.index)}`;
         return api.get(url);
     },
+    modrinthTags: () => api.get('/plugins/modrinth/tags'),
     modrinthProject: (id: string) => api.get(`/plugins/modrinth/project/${id}`),
     modrinthVersions: (id: string, loaders?: string[], gameVersions?: string[]) => {
         const params = new URLSearchParams();
@@ -111,8 +158,11 @@ export const pluginsApi = {
     },
     modrinthInstall: (uuid: string, projectId: string, versionId: string) =>
         api.post(`/plugins/${uuid}/modrinth/install`, { projectId, versionId }),
-    spigetSearch: (q: string, page = 1) =>
-        api.get(`/plugins/spiget/search?query=${encodeURIComponent(q)}&page=${page}`),
+    spigetSearch: (q: string, page = 1, categoryId?: number, size = 20) =>
+        api.get(`/plugins/spiget/search?query=${encodeURIComponent(q)}&page=${page}&size=${size}${categoryId ? `&categoryId=${categoryId}` : ''}`),
+    spigetCategories: () => api.get('/plugins/spiget/categories'),
+    spigetCategoryResources: (categoryId: number, page = 1, size = 20) =>
+        api.get(`/plugins/spiget/categories/${categoryId}/resources?page=${page}&size=${size}`),
     spigetResource: (id: number) => api.get(`/plugins/spiget/resource/${id}`),
     spigetVersions: (id: number) => api.get(`/plugins/spiget/resource/${id}/versions`),
     spigetInstall: (uuid: string, resourceId: number) =>

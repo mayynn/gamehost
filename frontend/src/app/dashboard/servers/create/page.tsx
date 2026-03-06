@@ -193,10 +193,10 @@ function CreateForm() {
                 </div>
                 <div className="p-5 grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {eggs.map((egg: any) => (
-                    <button key={`${egg.nest_id}-${egg.id}`}
-                      onClick={() => { setEggId(egg.id); setNestId(egg.nest_id); }}
+                    <button key={`${egg.nestId || egg.nest}-${egg.id}`}
+                      onClick={() => { setEggId(egg.id); setNestId(egg.nestId || egg.nest); }}
                       className="p-3 rounded-xl text-left transition-all text-sm"
-                      style={eggId === egg.id && nestId === egg.nest_id ? { background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.25)', color: 'var(--primary)' } : { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', color: '#9ca3af' }}>
+                      style={eggId === egg.id && nestId === (egg.nestId || egg.nest) ? { background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.25)', color: 'var(--primary)' } : { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', color: '#9ca3af' }}>
                       {egg.name}
                     </button>
                   ))}
