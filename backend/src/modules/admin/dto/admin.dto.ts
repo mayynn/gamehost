@@ -80,6 +80,9 @@ export class CreatePlanDto {
     @IsOptional() @IsInt() @Max(1048576) maxDisk?: number;
     @IsOptional() @IsInt() @Min(0) maxBackups?: number;
     @IsOptional() @IsInt() @Min(0) maxPorts?: number;
+
+    @IsOptional() @IsInt() @Min(1) @Max(365) renewalPeriodDays?: number;
+    @IsOptional() @IsNumber() @Min(0) renewalCost?: number;
 }
 
 export class UpdatePlanDto {
@@ -106,6 +109,9 @@ export class UpdatePlanDto {
     @IsOptional() @IsInt() @Max(1048576) maxDisk?: number;
     @IsOptional() @IsInt() @Min(0) maxBackups?: number;
     @IsOptional() @IsInt() @Min(0) maxPorts?: number;
+
+    @IsOptional() @IsInt() @Min(1) @Max(365) renewalPeriodDays?: number;
+    @IsOptional() @IsNumber() @Min(0) renewalCost?: number;
 }
 
 export class SetRoleDto {

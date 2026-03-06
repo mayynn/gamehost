@@ -1,1382 +1,907 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { serversApi, pluginsApi, playersApi } from '@/lib/api';
-import {
-    Play, Square, RotateCcw, Skull, Terminal, FolderOpen, Database,
-    Archive, Network, Settings, Puzzle, Users, AlertTriangle, Loader2,
-    Plus, Trash2, Save, Eye, ArrowLeft, RefreshCw, Download, FolderPlus, Edit2,
-    Shield, Star, UserX, UserPlus, LogOut, Search, Wifi, WifiOff, X, MessageSquare,
-    Cpu, HardDrive, MemoryStick, Copy, Eraser, Power, Info, Tag, FileCode
-} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
+import {
+  Terminal, FolderOpen, Database, Archive, Globe, Settings, Puzzle, Users,
+  Play, Square, RotateCcw, Skull, Trash2, ChevronLeft, Loader2, Send,
+  File, Folder, ArrowLeft, Edit3, Plus, Upload, X, Download, RefreshCw,
+  Search, ExternalLink, ShieldAlert, Clock, AlertTriangle, CheckCircle,
+  MemoryStick, Cpu, HardDrive, Copy, Eye, EyeOff, UserMinus, UserPlus,
+  Shield, Ban, Gavel
+} from 'lucide-react';
+import Link from 'next/link';
 
-const tabs = [
-    { id: 'console', label: 'Console', icon: Terminal },
-    { id: 'files', label: 'Files', icon: FolderOpen },
-    { id: 'databases', label: 'Databases', icon: Database },
-    { id: 'backups', label: 'Backups', icon: Archive },
-    { id: 'network', label: 'Network', icon: Network },
-    { id: 'startup', label: 'Startup', icon: Settings },
-    { id: 'plugins', label: 'Plugins', icon: Puzzle },
-    { id: 'players', label: 'Players', icon: Users },
+const TABS = [
+  { id: 'console', label: 'Console', icon: Terminal },
+  { id: 'files', label: 'Files', icon: FolderOpen },
+  { id: 'databases', label: 'Databases', icon: Database },
+  { id: 'backups', label: 'Backups', icon: Archive },
+  { id: 'network', label: 'Network', icon: Globe },
+  { id: 'startup', label: 'Startup', icon: Settings },
+  { id: 'plugins', label: 'Plugins', icon: Puzzle },
+  { id: 'players', label: 'Players', icon: Users },
 ];
 
+const STATUS_CFG: Record<string, { text: string; dot: string; bg: string; border: string }> = {
+  running: { text: 'text-emerald-400', dot: 'bg-emerald-400', bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.2)' },
+  starting: { text: 'text-yellow-400', dot: 'bg-yellow-400 animate-pulse', bg: 'rgba(234,179,8,0.08)', border: 'rgba(234,179,8,0.2)' },
+  stopping: { text: 'text-orange-400', dot: 'bg-orange-400', bg: 'rgba(249,115,22,0.08)', border: 'rgba(249,115,22,0.2)' },
+  offline: { text: 'text-gray-400', dot: 'bg-gray-500', bg: 'rgba(107,114,128,0.08)', border: 'rgba(107,114,128,0.2)' },
+};
+
+function stripAnsi(s: string) { return s.replace(/\x1b\[[0-9;]*m/g, ''); }
+
 export default function ServerDetailPage() {
-    const { id } = useParams();
-    const router = useRouter();
-    const [server, setServer] = useState<any>(null);
-    const [tab, setTab] = useState('console');
-    const [loading, setLoading] = useState(true);
-    const [command, setCommand] = useState('');
-    const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
-    const consoleRef = useRef<HTMLDivElement>(null);
-    const [commandHistory, setCommandHistory] = useState<string[]>([]);
-    const [historyIndex, setHistoryIndex] = useState(-1);
-    const [files, setFiles] = useState<any[]>([]);
-    const [currentDir, setCurrentDir] = useState('/');
-    const [fileContent, setFileContent] = useState<string | null>(null);
-    const [editingFile, setEditingFile] = useState<string | null>(null);
-    const [fileEditContent, setFileEditContent] = useState('');
-    const [backups, setBackups] = useState<any[]>([]);
-    const [databases, setDatabases] = useState<any[]>([]);
-    const [newDbName, setNewDbName] = useState('');
-    const [network, setNetwork] = useState<any[]>([]);
-    const [startup, setStartup] = useState<any[]>([]);
-    const [startupValues, setStartupValues] = useState<Record<string, string>>({});
-    const [pluginSearch, setPluginSearch] = useState('');
-    const [pluginResults, setPluginResults] = useState<any[]>([]);
-    const [pluginSource, setPluginSource] = useState<'modrinth' | 'spiget'>('modrinth');
-    const [pluginVersions, setPluginVersions] = useState<any[]>([]);
-    const [selectedProject, setSelectedProject] = useState<any>(null);
-    const [installingPlugin, setInstallingPlugin] = useState<string | null>(null);
-    const [installedPlugins, setInstalledPlugins] = useState<any[]>([]);
-    const [whitelist, setWhitelist] = useState<any[]>([]);
-    const [banned, setBanned] = useState<any[]>([]);
-    const [ops, setOps] = useState<any[]>([]);
-    const [playerInput, setPlayerInput] = useState('');
-    const [onlinePlayers, setOnlinePlayers] = useState<{ count: number; max: number; players: string[] }>({ count: 0, max: 0, players: [] });
-    const [playerActionLoading, setPlayerActionLoading] = useState(false);
-    const [playersRefreshing, setPlayersRefreshing] = useState(false);
-    const [banModal, setBanModal] = useState<{ player: string; reason: string } | null>(null);
-    const [kickModal, setKickModal] = useState<{ player: string; reason: string } | null>(null);
-    const [deleting, setDeleting] = useState(false);
-    const [newFolderName, setNewFolderName] = useState('');
-    const [renamingFile, setRenamingFile] = useState<string | null>(null);
-    const [renameValue, setRenameValue] = useState('');
-    const [serverSoftware, setServerSoftware] = useState<{ software: string; type: string } | null>(null);
-    const [consoleConnected, setConsoleConnected] = useState(false);
-    const [consoleAutoScroll, setConsoleAutoScroll] = useState(true);
-    const [pluginUpdates, setPluginUpdates] = useState<any[]>([]);
-    const [checkingUpdates, setCheckingUpdates] = useState(false);
-    const [renewalCost, setRenewalCost] = useState<{ price: number; renewalDays: number; expiresAt: string | null; serverName: string; isFreeServer: boolean } | null>(null);
-    const [renewing, setRenewing] = useState(false);
+  const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const [server, setServer] = useState<any>(null);
+  const [tab, setTab] = useState('console');
+  const [loading, setLoading] = useState(true);
+  const [powerLoading, setPowerLoading] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [renewLoading, setRenewLoading] = useState(false);
+  const [renewalCost, setRenewalCost] = useState<number | null>(null);
 
-    const serverId = id as string;
+  const fetchServer = useCallback(async () => {
+    try {
+      const res = await serversApi.get(id);
+      setServer(res.data);
+    } catch { toast.error('Failed to load server'); router.push('/dashboard/servers'); }
+    finally { setLoading(false); }
+  }, [id, router]);
 
-    const loadServer = useCallback(async () => {
-        try {
-            const { data } = await serversApi.get(serverId);
-            setServer(data);
-        } catch { toast.error('Failed to load server'); }
-        finally { setLoading(false); }
-    }, [serverId]);
+  useEffect(() => { fetchServer(); }, [fetchServer]);
 
-    useEffect(() => { loadServer(); }, [loadServer]);
+  useEffect(() => {
+    if (!server) return;
+    const iv = setInterval(fetchServer, 15000);
+    return () => clearInterval(iv);
+  }, [server, fetchServer]);
 
-    // Load renewal cost
-    useEffect(() => {
-        serversApi.renewalCost(serverId as string)
-            .then((r) => setRenewalCost(r.data))
-            .catch(() => {});
-    }, [serverId]);
+  const handlePower = async (signal: string) => {
+    setPowerLoading(true);
+    try { await serversApi.power(id, signal); toast.success(`Power: ${signal}`); setTimeout(fetchServer, 2000); }
+    catch { toast.error('Power action failed'); }
+    finally { setPowerLoading(false); }
+  };
 
-    // Auto-detect server software when server loads
-    useEffect(() => {
-        if (!server?.pteroUuid) return;
-        pluginsApi.detect(server.pteroUuid)
-            .then((r) => {
-                setServerSoftware(r.data);
-                // Auto-select Modrinth for mod-based servers (Fabric/Forge) since Spiget only has Bukkit plugins
-                if (r.data?.type === 'mod') {
-                    setPluginSource('modrinth');
-                }
-            })
-            .catch(() => {});
-    }, [server?.pteroUuid]);
+  const handleDelete = async () => {
+    try { await serversApi.delete(id); toast.success('Server deleted'); router.push('/dashboard/servers'); }
+    catch { toast.error('Failed to delete'); }
+  };
 
-    const powerAction = async (action: string) => {
-        try {
-            await serversApi.power(serverId, action);
-            toast.success(`Power ${action} sent`);
-            setTimeout(loadServer, 2000);
-        } catch { toast.error('Power action failed'); }
-    };
+  const handleRenew = async () => {
+    setRenewLoading(true);
+    try { await serversApi.renew(id); toast.success('Server renewed!'); fetchServer(); }
+    catch (e: any) { toast.error(e?.response?.data?.message || 'Renewal failed'); }
+    finally { setRenewLoading(false); }
+  };
 
-    const sendCommand = async () => {
-        if (!command.trim()) return;
-        try {
-            await serversApi.command(serverId, command);
-            setConsoleLogs((prev) => [...prev, `> ${command}`]);
-            setCommandHistory((prev) => [command, ...prev.slice(0, 49)]);
-            setHistoryIndex(-1);
-            setCommand('');
-            // Scroll console to bottom
-            setTimeout(() => {
-                if (consoleRef.current) consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
-            }, 100);
-        } catch { toast.error('Failed to send command'); }
-    };
+  useEffect(() => {
+    if (server) serversApi.renewalCost(id).then(r => setRenewalCost(r.data.cost ?? r.data.price ?? r.data)).catch(() => {});
+  }, [server, id]);
 
-    const handleCommandKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') sendCommand();
-        if (e.key === 'ArrowUp' && commandHistory.length > 0) {
-            e.preventDefault();
-            const newIndex = Math.min(historyIndex + 1, commandHistory.length - 1);
-            setHistoryIndex(newIndex);
-            setCommand(commandHistory[newIndex]);
-        }
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            if (historyIndex <= 0) { setHistoryIndex(-1); setCommand(''); }
-            else { const newIndex = historyIndex - 1; setHistoryIndex(newIndex); setCommand(commandHistory[newIndex]); }
-        }
-    };
+  if (loading) return <div className="flex items-center justify-center py-20"><Loader2 className="w-7 h-7 text-primary animate-spin" /></div>;
+  if (!server) return null;
 
-    // Poll console logs when on console tab
-    useEffect(() => {
-        if (tab !== 'console' || !server?.pteroUuid) return;
-        const fetchConsole = async () => {
-            try {
-                const { data } = await serversApi.console(serverId);
-                if (data?.logs && Array.isArray(data.logs)) {
-                    setConsoleLogs(data.logs);
-                    setConsoleConnected(true);
-                } else if (data?.token) {
-                    setConsoleConnected(true);
-                    setConsoleLogs((prev) => prev.length === 0 ? ['[Console connected - use commands below]'] : prev);
-                }
-            } catch {
-                setConsoleConnected(false);
-            }
-        };
-        fetchConsole();
-        const interval = setInterval(fetchConsole, 5000);
-        return () => clearInterval(interval);
-    }, [tab, server?.pteroUuid, serverId]);
+  const status = server.resources?.current_state || server.status?.toLowerCase() || 'offline';
+  const sc = STATUS_CFG[status] || STATUS_CFG.offline;
+  const isSuspended = server.status === 'SUSPENDED';
+  const isExpired = server.status === 'EXPIRED';
 
-    // Auto-scroll console when new logs arrive
-    useEffect(() => {
-        if (consoleAutoScroll && consoleRef.current) {
-            consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
-        }
-    }, [consoleLogs, consoleAutoScroll]);
-
-    const openFile = async (file: any) => {
-        if (!file.is_file) return loadFiles(`${currentDir}/${file.name}`.replace('//', '/'));
-        if (file.size > 512 * 1024) return toast.error('File too large to view (max 512KB)');
-        try {
-            const { data } = await serversApi.readFile(serverId, `${currentDir}/${file.name}`.replace('//', '/'));
-            setFileContent(typeof data === 'string' ? data : data?.content || JSON.stringify(data, null, 2));
-            setEditingFile(`${currentDir}/${file.name}`.replace('//', '/'));
-            setFileEditContent(typeof data === 'string' ? data : data?.content || '');
-        } catch { toast.error('Failed to read file'); }
-    };
-
-    const saveFile = async () => {
-        if (!editingFile) return;
-        try {
-            await serversApi.writeFile(serverId, editingFile, fileEditContent);
-            toast.success('File saved');
-        } catch { toast.error('Failed to save file'); }
-    };
-
-    const createDatabase = async () => {
-        if (!newDbName.trim()) return toast.error('Enter database name');
-        try {
-            await serversApi.createDb(serverId, newDbName);
-            toast.success('Database created');
-            setNewDbName('');
-            loadTabData('databases');
-        } catch { toast.error('Failed to create database'); }
-    };
-
-    const saveStartupVariable = async (key: string, value: string) => {
-        try {
-            await serversApi.updateStartup(serverId, key, value);
-            toast.success(`Updated ${key}`);
-        } catch { toast.error('Failed to update variable'); }
-    };
-
-    const deleteServer = async () => {
-        if (!confirm('Are you sure you want to delete this server? This action cannot be undone.')) return;
-        setDeleting(true);
-        try {
-            await serversApi.delete(serverId);
-            toast.success('Server deleted');
-            router.push('/dashboard/servers');
-        } catch { toast.error('Failed to delete server'); }
-        finally { setDeleting(false); }
-    };
-
-    const renewServer = async () => {
-        setRenewing(true);
-        try {
-            await serversApi.renew(serverId);
-            toast.success('Server renewed successfully!');
-            await loadServer();
-            // Refresh renewal cost
-            const r = await serversApi.renewalCost(serverId);
-            setRenewalCost(r.data);
-        } catch (e: any) {
-            toast.error(e?.response?.data?.message || 'Failed to renew server');
-        } finally {
-            setRenewing(false);
-        }
-    };
-
-    const loadFiles = async (dir: string) => {
-        try {
-            const { data } = await serversApi.listFiles(serverId, dir);
-            setFiles(data || []);
-            setCurrentDir(dir);
-        } catch { toast.error('Failed to load files'); }
-    };
-
-    const loadTabData = async (t: string) => {
-        setTab(t);
-        if (!server?.pteroUuid) return;
-        try {
-            switch (t) {
-                case 'files': await loadFiles('/'); break;
-                case 'backups': { const r = await serversApi.backups(serverId); setBackups(r.data || []); break; }
-                case 'databases': { const r = await serversApi.databases(serverId); setDatabases(r.data || []); break; }
-                case 'network': { const r = await serversApi.network(serverId); setNetwork(r.data || []); break; }
-                case 'startup': { const r = await serversApi.startup(serverId); setStartup(r.data); break; }
-                case 'plugins': {
-                    const r = await pluginsApi.installed(server.pteroUuid);
-                    setInstalledPlugins(r.data || []);
-                    break;
-                }
-                case 'players': {
-                    setPlayersRefreshing(true);
-                    try {
-                        const [w, b, o] = await Promise.all([
-                            playersApi.whitelist(server.pteroUuid),
-                            playersApi.banned(server.pteroUuid),
-                            playersApi.ops(server.pteroUuid),
-                        ]);
-                        setWhitelist(w.data || []);
-                        setBanned(b.data || []);
-                        setOps(o.data || []);
-                        // Fetch online players in background (reads log file, may be slow)
-                        playersApi.online(server.pteroUuid).then((r) => {
-                            setOnlinePlayers(r.data || { count: 0, max: 0, players: [] });
-                        }).catch(() => { });
-                    } finally {
-                        setPlayersRefreshing(false);
-                    }
-                    break;
-                }
-            }
-        } catch { }
-    };
-
-    const searchPlugins = async () => {
-        if (!pluginSearch.trim()) return;
-        setSelectedProject(null);
-        setPluginVersions([]);
-        try {
-            if (pluginSource === 'modrinth') {
-                // Pass detected server software as loader filter for relevant results
-                const loaders = serverSoftware?.software && serverSoftware.software !== 'unknown'
-                    ? [serverSoftware.software]
-                    : undefined;
-                const { data } = await pluginsApi.modrinthSearch(pluginSearch, 20, 0, loaders);
-                setPluginResults(data?.hits || []);
-            } else {
-                const { data } = await pluginsApi.spigetSearch(pluginSearch);
-                setPluginResults(data || []);
-            }
-        } catch { toast.error('Search failed'); }
-    };
-
-    const viewModrinthVersions = async (project: any) => {
-        setSelectedProject(project);
-        try {
-            // Pass detected server software as loader filter for compatible versions
-            const loaders = serverSoftware?.software && serverSoftware.software !== 'unknown'
-                ? [serverSoftware.software]
-                : undefined;
-            const { data } = await pluginsApi.modrinthVersions(project.project_id, loaders);
-            setPluginVersions(data || []);
-        } catch { toast.error('Failed to load versions'); }
-    };
-
-    const installModrinthVersion = async (versionId: string) => {
-        if (!server?.pteroUuid) return;
-        const projectId = selectedProject?.project_id;
-        if (!projectId) return;
-        setInstallingPlugin(versionId);
-        try {
-            await pluginsApi.modrinthInstall(server.pteroUuid, projectId, versionId);
-            toast.success('Plugin installed! Restart your server.');
-            loadTabData('plugins');
-        } catch { toast.error('Install failed'); }
-        finally { setInstallingPlugin(null); }
-    };
-
-    const installSpigetResource = async (resourceId: number) => {
-        if (!server?.pteroUuid) return;
-        setInstallingPlugin(String(resourceId));
-        try {
-            await pluginsApi.spigetInstall(server.pteroUuid, resourceId);
-            toast.success('Plugin installed! Restart your server.');
-            loadTabData('plugins');
-        } catch { toast.error('Install failed'); }
-        finally { setInstallingPlugin(null); }
-    };
-
-    const removePlugin = async (fileName: string) => {
-        if (!server?.pteroUuid) return;
-        if (!confirm(`Remove ${fileName}?`)) return;
-        try {
-            await pluginsApi.remove(server.pteroUuid, fileName);
-            toast.success('Plugin removed');
-            loadTabData('plugins');
-        } catch { toast.error('Failed to remove plugin'); }
-    };
-
-    const deleteBackup = async (backupId: string) => {
-        if (!confirm('Delete this backup?')) return;
-        try {
-            await serversApi.deleteBackup(serverId, backupId);
-            toast.success('Backup deleted');
-            loadTabData('backups');
-        } catch { toast.error('Failed to delete backup'); }
-    };
-
-    const downloadBackup = async (backupId: string) => {
-        try {
-            const { data } = await serversApi.downloadBackup(serverId, backupId);
-            if (data?.url) window.open(data.url, '_blank');
-            else toast.error('No download URL');
-        } catch { toast.error('Failed to get download link'); }
-    };
-
-    const deleteDb = async (dbId: string) => {
-        if (!confirm('Delete this database? This cannot be undone.')) return;
-        try {
-            await serversApi.deleteDb(serverId, dbId);
-            toast.success('Database deleted');
-            loadTabData('databases');
-        } catch { toast.error('Failed to delete database'); }
-    };
-
-    const deleteFileAction = async (fileName: string, isFile: boolean) => {
-        if (!confirm(`Delete ${fileName}?`)) return;
-        try {
-            await serversApi.deleteFiles(serverId, currentDir, [fileName]);
-            toast.success('Deleted');
-            loadFiles(currentDir);
-        } catch { toast.error('Failed to delete'); }
-    };
-
-    const renameFileAction = async (oldName: string) => {
-        if (!renameValue.trim() || renameValue === oldName) {
-            setRenamingFile(null);
-            return;
-        }
-        try {
-            await serversApi.renameFile(serverId, currentDir, oldName, renameValue);
-            toast.success('Renamed');
-            setRenamingFile(null);
-            loadFiles(currentDir);
-        } catch { toast.error('Failed to rename'); }
-    };
-
-    const createFolder = async () => {
-        if (!newFolderName.trim()) return;
-        try {
-            await serversApi.createFolder(serverId, currentDir, newFolderName);
-            toast.success('Folder created');
-            setNewFolderName('');
-            loadFiles(currentDir);
-        } catch { toast.error('Failed to create folder'); }
-    };
-
-    const playerAction = async (action: string, targetPlayer?: string, reason?: string) => {
-        const name = targetPlayer || playerInput.trim();
-        if (!name || !server?.pteroUuid) return;
-        setPlayerActionLoading(true);
-        try {
-            switch (action) {
-                case 'whitelist': await playersApi.addWhitelist(server.pteroUuid, name); break;
-                case 'ban': await playersApi.ban(server.pteroUuid, name, reason); break;
-                case 'op': await playersApi.op(server.pteroUuid, name); break;
-                case 'kick': await playersApi.kick(server.pteroUuid, name, reason); break;
-            }
-            toast.success(`${action.charAt(0).toUpperCase() + action.slice(1)}: ${name}`);
-            setPlayerInput('');
-            setBanModal(null);
-            setKickModal(null);
-            // Reload player lists
-            const [w, b, o] = await Promise.all([
-                playersApi.whitelist(server.pteroUuid),
-                playersApi.banned(server.pteroUuid),
-                playersApi.ops(server.pteroUuid),
-            ]);
-            setWhitelist(w.data || []);
-            setBanned(b.data || []);
-            setOps(o.data || []);
-        } catch (e: any) {
-            toast.error(e?.response?.data?.message || `${action} failed`);
-        } finally {
-            setPlayerActionLoading(false);
-        }
-    };
-
-    const openBanModal = () => {
-        const name = playerInput.trim();
-        if (!name) return toast.error('Enter a player name first');
-        setBanModal({ player: name, reason: '' });
-    };
-
-    const openKickModal = () => {
-        const name = playerInput.trim();
-        if (!name) return toast.error('Enter a player name first');
-        setKickModal({ player: name, reason: '' });
-    };
-
-    if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
-    if (!server) return <div className="text-center py-20 text-gray-400">Server not found</div>;
-
-    const isSuspended = server.status === 'SUSPENDED';
-
-    return (
-        <div className="relative">
-            {/* Suspension Overlay */}
-            {isSuspended && (
-                <div className="absolute inset-0 z-40 bg-dark/80 backdrop-blur-sm flex items-center justify-center rounded-xl">
-                    <div className="glass-card p-8 max-w-md text-center">
-                        <AlertTriangle className="w-16 h-16 text-orange-400 mx-auto mb-4" />
-                        <h2 className="text-2xl font-bold mb-2">Server Suspended</h2>
-                        <p className="text-gray-400 mb-4">This server has been suspended due to payment issues. Please renew to restore access.</p>
-                        <div className="flex gap-3 justify-center">
-                            <button onClick={() => router.back()} className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">Go Back</button>
-                            <button
-                                onClick={renewServer}
-                                disabled={renewing}
-                                className="btn-primary flex items-center gap-2"
-                            >
-                                {renewing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                                {renewing ? 'Renewing...' : renewalCost?.isFreeServer ? 'Renew (1 Credit)' : `Renew${renewalCost ? ` (₹${renewalCost.price})` : ''}`}
-                            </button>
-                        </div>
-                    </div>
-                </div>
+  return (
+    <div className="space-y-6">
+      {/* Suspension/Expired Overlay */}
+      {(isSuspended || isExpired) && (
+        <div className="rounded-xl p-5" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)' }}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
+              <ShieldAlert className="w-5 h-5 text-red-400" />
+            </div>
+            <div>
+              <p className="font-semibold text-red-400 text-sm">{isSuspended ? 'Server Suspended' : 'Server Expired'}</p>
+              <p className="text-[12px] text-gray-500 mt-0.5">{isSuspended ? 'Contact support for assistance.' : 'Renew your server to continue using it.'}</p>
+            </div>
+            {isExpired && (
+              <button onClick={handleRenew} disabled={renewLoading} className="btn-primary ml-auto text-sm">
+                {renewLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : `Renew${renewalCost !== null ? ` (₹${renewalCost})` : ''}`}
+              </button>
             )}
-
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-                <div>
-                    <div className="flex items-center gap-3 mb-1">
-                        <h1 className="text-2xl font-display font-bold">{server.name}</h1>
-                        {serverSoftware && serverSoftware.software !== 'unknown' && (
-                            <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex items-center gap-1.5 ${
-                                serverSoftware.software === 'paper' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
-                                serverSoftware.software === 'spigot' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' :
-                                serverSoftware.software === 'fabric' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
-                                serverSoftware.software === 'forge' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
-                                serverSoftware.software === 'velocity' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
-                                'bg-white/10 text-gray-300 border border-white/10'
-                            }`}>
-                                <FileCode className="w-3 h-3" />
-                                {serverSoftware.software.charAt(0).toUpperCase() + serverSoftware.software.slice(1)}
-                                <span className="text-[10px] opacity-60">({serverSoftware.type})</span>
-                            </span>
-                        )}
-                    </div>
-                    <div className="flex items-center gap-4 text-sm text-gray-400">
-                        <span className="flex items-center gap-1"><MemoryStick className="w-3.5 h-3.5" /> {server.ram}MB</span>
-                        <span className="flex items-center gap-1"><Cpu className="w-3.5 h-3.5" /> {server.cpu}%</span>
-                        <span className="flex items-center gap-1"><HardDrive className="w-3.5 h-3.5" /> {server.disk}MB</span>
-                    </div>
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                    <button onClick={() => powerAction('start')} className="p-2.5 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors" title="Start"><Play className="w-5 h-5" /></button>
-                    <button onClick={() => powerAction('restart')} className="p-2.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors" title="Restart"><RotateCcw className="w-5 h-5" /></button>
-                    <button onClick={() => powerAction('stop')} className="p-2.5 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 transition-colors" title="Stop"><Square className="w-5 h-5" /></button>
-                    <button onClick={() => powerAction('kill')} className="p-2.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors" title="Kill"><Skull className="w-5 h-5" /></button>
-                    <div className="w-px bg-white/10 mx-1" />
-                    <button onClick={deleteServer} disabled={deleting} className="p-2.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors" title="Delete server">
-                        {deleting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
-                    </button>
-                </div>
-            </div>
-
-            {/* Renewal Info Strip */}
-            {renewalCost && server.expiresAt && (
-                <div className={`glass-card p-3 mb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
-                    new Date(server.expiresAt).getTime() - Date.now() < 3 * 24 * 60 * 60 * 1000
-                        ? 'border-orange-500/30 bg-orange-500/5'
-                        : 'border-white/5'
-                }`}>
-                    <div className="flex items-center gap-3 text-sm">
-                        <Info className="w-4 h-4 text-primary flex-shrink-0" />
-                        <span className="text-gray-400">
-                            {server.isFreeServer ? `Free Server · Renews every ${renewalCost.renewalDays}d (1 credit)` : `₹${renewalCost.price}/${renewalCost.renewalDays}d`}
-                            {' · '}
-                            Expires{' '}
-                            <span className={
-                                new Date(server.expiresAt).getTime() - Date.now() < 3 * 24 * 60 * 60 * 1000
-                                    ? 'text-orange-400 font-medium'
-                                    : 'text-white'
-                            }>
-                                {new Date(server.expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                            </span>
-                            {' '}
-                            ({Math.max(0, Math.ceil((new Date(server.expiresAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000)))} days left)
-                        </span>
-                    </div>
-                    <button
-                        onClick={renewServer}
-                        disabled={renewing}
-                        className="px-4 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors text-sm font-medium flex items-center gap-2 flex-shrink-0"
-                    >
-                        {renewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                        {renewing ? 'Renewing...' : renewalCost.isFreeServer ? 'Renew (1 Credit)' : `Renew${renewalCost.price > 0 ? ` ₹${renewalCost.price}` : ''}`}
-                    </button>
-                </div>
-            )}
-
-            {/* Tabs */}
-            <div className="flex gap-1 mb-6 overflow-x-auto pb-2">
-                {tabs.map((t) => (
-                    <button
-                        key={t.id}
-                        onClick={() => loadTabData(t.id)}
-                        className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${tab === t.id ? 'bg-primary/10 text-primary' : 'text-gray-400 hover:text-white hover:bg-white/5'
-                            }`}
-                    >
-                        <t.icon className="w-4 h-4" />
-                        {t.label}
-                    </button>
-                ))}
-            </div>
-
-            {/* Tab Content */}
-            <div className="glass-card p-6">
-                {/* Console */}
-                {tab === 'console' && (
-                    <div>
-                        {/* Console Header Bar */}
-                        <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                                <div className={`w-2 h-2 rounded-full ${consoleConnected ? 'bg-green-400 shadow-lg shadow-green-400/40' : 'bg-red-400'}`} />
-                                <span className="text-xs text-gray-400">{consoleConnected ? 'Connected' : 'Disconnected'}</span>
-                                <span className="text-xs text-gray-600">· Polling every 5s</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                                <button
-                                    onClick={() => {
-                                        navigator.clipboard.writeText(consoleLogs.join('\n'));
-                                        toast.success('Console copied to clipboard');
-                                    }}
-                                    className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors"
-                                    title="Copy console"
-                                >
-                                    <Copy className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                    onClick={() => setConsoleLogs([])}
-                                    className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors"
-                                    title="Clear console"
-                                >
-                                    <Eraser className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                    onClick={() => setConsoleAutoScroll(!consoleAutoScroll)}
-                                    className={`p-1.5 rounded-lg transition-colors ${consoleAutoScroll ? 'text-primary bg-primary/10' : 'text-gray-500 hover:text-white hover:bg-white/10'}`}
-                                    title={consoleAutoScroll ? 'Auto-scroll ON' : 'Auto-scroll OFF'}
-                                >
-                                    <ArrowLeft className="w-3.5 h-3.5 rotate-[-90deg]" />
-                                </button>
-                            </div>
-                        </div>
-                        <div
-                            ref={consoleRef}
-                            className="bg-black/60 rounded-xl p-4 h-[400px] overflow-y-auto mb-4 font-mono text-xs leading-relaxed border border-white/5"
-                            onScroll={() => {
-                                if (!consoleRef.current) return;
-                                const { scrollTop, scrollHeight, clientHeight } = consoleRef.current;
-                                setConsoleAutoScroll(scrollHeight - scrollTop - clientHeight < 50);
-                            }}
-                        >
-                            {consoleLogs.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                                    <Terminal className="w-10 h-10 mb-3 opacity-30" />
-                                    <p className="text-sm">Waiting for console output...</p>
-                                    <p className="text-xs mt-1 text-gray-600">Console polls every 5 seconds. Use commands below to interact.</p>
-                                </div>
-                            ) : (
-                                consoleLogs.map((line, i) => {
-                                    // Strip ANSI escape codes for clean display
-                                    const clean = line.replace(/\x1b\[[0-9;]*m/g, '');
-                                    const isCmd = clean.startsWith('>');
-                                    const isError = /\b(ERROR|SEVERE|FATAL)\b/i.test(clean);
-                                    const isWarn = /\b(WARN|WARNING)\b/i.test(clean);
-                                    const isInfo = /\b(INFO)\b/i.test(clean);
-                                    return (
-                                        <p key={i} className={`whitespace-pre-wrap break-all py-px ${
-                                            isCmd ? 'text-primary font-medium' :
-                                            isError ? 'text-red-400' :
-                                            isWarn ? 'text-orange-400' :
-                                            isInfo ? 'text-green-400/80' :
-                                            'text-gray-300'
-                                        }`}>
-                                            {clean}
-                                        </p>
-                                    );
-                                })
-                            )}
-                        </div>
-                        <div className="flex gap-2">
-                            <div className="relative flex-1">
-                                <Terminal className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                                <input
-                                    type="text"
-                                    value={command}
-                                    onChange={(e) => setCommand(e.target.value)}
-                                    onKeyDown={handleCommandKeyDown}
-                                    placeholder="Type a command... (↑/↓ for history)"
-                                    className="input-field w-full pl-10 font-mono text-sm"
-                                />
-                            </div>
-                            <button onClick={sendCommand} className="btn-primary px-6">Send</button>
-                        </div>
-                        {commandHistory.length > 0 && (
-                            <p className="text-xs text-gray-600 mt-2">History: {commandHistory.length} command{commandHistory.length !== 1 ? 's' : ''}</p>
-                        )}
-                    </div>
-                )}
-
-                {/* Files */}
-                {tab === 'files' && (
-                    <div>
-                        {editingFile ? (
-                            /* File Editor */
-                            <div>
-                                <div className="flex items-center justify-between mb-4">
-                                    <div className="flex items-center gap-2">
-                                        <button onClick={() => { setEditingFile(null); setFileContent(null); }} className="text-gray-400 hover:text-white transition-colors">
-                                            <ArrowLeft className="w-4 h-4" />
-                                        </button>
-                                        <span className="text-sm text-primary font-mono">{editingFile}</span>
-                                    </div>
-                                    <button onClick={saveFile} className="btn-primary text-sm flex items-center gap-2">
-                                        <Save className="w-4 h-4" /> Save
-                                    </button>
-                                </div>
-                                <textarea
-                                    value={fileEditContent}
-                                    onChange={(e) => setFileEditContent(e.target.value)}
-                                    className="w-full h-96 bg-black/50 rounded-xl p-4 font-mono text-sm text-green-400 resize-none focus:outline-none focus:ring-1 focus:ring-primary/30"
-                                    spellCheck={false}
-                                />
-                            </div>
-                        ) : (
-                            /* File Browser */
-                            <div>
-                                <div className="flex items-center justify-between mb-4">
-                                    <div className="text-sm text-gray-400">
-                                        Path: <span className="text-primary font-mono">{currentDir}</span>
-                                        {currentDir !== '/' && (
-                                            <button onClick={() => loadFiles(currentDir.split('/').slice(0, -1).join('/') || '/')} className="ml-2 text-primary hover:underline">← Back</button>
-                                        )}
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <button onClick={() => loadFiles(currentDir)} className="p-2 text-gray-400 hover:text-white transition-colors" title="Refresh">
-                                            <RefreshCw className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                </div>
-                                {/* Create folder */}
-                                <div className="flex gap-2 mb-4">
-                                    <input value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)}
-                                        placeholder="New folder name..." className="input-field flex-1 text-sm"
-                                        onKeyDown={(e) => e.key === 'Enter' && createFolder()} />
-                                    <button onClick={createFolder} className="btn-secondary text-sm flex items-center gap-1.5">
-                                        <FolderPlus className="w-4 h-4" /> Create
-                                    </button>
-                                </div>
-                                <div className="space-y-1">
-                                    {files.map((f: any, i: number) => (
-                                        <div key={i} className="flex items-center gap-3 p-3 rounded-lg hover:bg-white/5 transition-colors group">
-                                            <div className="flex-1 flex items-center gap-3 cursor-pointer" onClick={() => openFile(f)}>
-                                                <FolderOpen className={`w-4 h-4 ${f.is_file ? 'text-gray-500' : 'text-primary'}`} />
-                                                {renamingFile === f.name ? (
-                                                    <input value={renameValue} onChange={(e) => setRenameValue(e.target.value)}
-                                                        onKeyDown={(e) => { if (e.key === 'Enter') renameFileAction(f.name); if (e.key === 'Escape') setRenamingFile(null); }}
-                                                        onBlur={() => renameFileAction(f.name)}
-                                                        className="input-field text-sm py-1 px-2 flex-1" autoFocus
-                                                        onClick={(e) => e.stopPropagation()} />
-                                                ) : (
-                                                    <span className="flex-1 text-sm">{f.name}</span>
-                                                )}
-                                                <span className="text-xs text-gray-500">{f.is_file ? `${(f.size / 1024).toFixed(1)}KB` : 'DIR'}</span>
-                                            </div>
-                                            <div className="hidden group-hover:flex gap-1">
-                                                <button onClick={(e) => { e.stopPropagation(); setRenamingFile(f.name); setRenameValue(f.name); }}
-                                                    className="p-1.5 rounded text-gray-500 hover:text-white hover:bg-white/10 transition-colors" title="Rename">
-                                                    <Edit2 className="w-3.5 h-3.5" />
-                                                </button>
-                                                <button onClick={(e) => { e.stopPropagation(); deleteFileAction(f.name, f.is_file); }}
-                                                    className="p-1.5 rounded text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Delete">
-                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {files.length === 0 && <p className="text-gray-500 text-center py-8">Empty directory</p>}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* Databases */}
-                {tab === 'databases' && (
-                    <div>
-                        <div className="flex gap-2 mb-4">
-                            <input value={newDbName} onChange={(e) => setNewDbName(e.target.value)}
-                                placeholder="Database name..." className="input-field flex-1"
-                                onKeyDown={(e) => e.key === 'Enter' && createDatabase()} />
-                            <button onClick={createDatabase} className="btn-primary flex items-center gap-2">
-                                <Plus className="w-4 h-4" /> Create
-                            </button>
-                        </div>
-                        <div className="space-y-3">
-                            {databases.map((db: any, i: number) => (
-                                <div key={i} className="flex items-center gap-4 p-4 rounded-lg bg-white/5">
-                                    <Database className="w-5 h-5 text-primary" />
-                                    <div className="flex-1">
-                                        <p className="font-medium">{db.name}</p>
-                                        <p className="text-xs text-gray-500">{db.host}:{db.port} · User: {db.username || 'N/A'}</p>
-                                    </div>
-                                    <button onClick={() => deleteDb(db.id)} className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors" title="Delete">
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            ))}
-                            {databases.length === 0 && <p className="text-gray-500 text-center py-8">No databases — create one above</p>}
-                        </div>
-                    </div>
-                )}
-
-                {/* Backups */}
-                {tab === 'backups' && (
-                    <div>
-                        <button onClick={async () => { try { await serversApi.createBackup(serverId); toast.success('Backup created'); loadTabData('backups'); } catch (e: any) { toast.error(e?.response?.data?.message || 'Failed to create backup'); } }} className="btn-primary mb-4">Create Backup</button>
-                        <div className="space-y-3">
-                            {backups.map((b: any, i: number) => (
-                                <div key={i} className="flex items-center gap-4 p-4 rounded-lg bg-white/5">
-                                    <Archive className="w-5 h-5 text-primary" />
-                                    <div className="flex-1"><p className="font-medium">{b.name}</p><p className="text-xs text-gray-500">{new Date(b.created_at).toLocaleDateString()}</p></div>
-                                    <span className="text-xs text-gray-500">{(b.bytes / 1024 / 1024).toFixed(1)}MB</span>
-                                    <button onClick={() => downloadBackup(b.uuid)} className="p-2 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors" title="Download">
-                                        <Download className="w-4 h-4" />
-                                    </button>
-                                    <button onClick={() => deleteBackup(b.uuid)} className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors" title="Delete">
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            ))}
-                            {backups.length === 0 && <p className="text-gray-500 text-center py-8">No backups yet</p>}
-                        </div>
-                    </div>
-                )}
-
-                {/* Network */}
-                {tab === 'network' && (
-                    <div className="space-y-3">
-                        {network.map((a: any, i: number) => (
-                            <div key={i} className="flex items-center gap-4 p-4 rounded-lg bg-white/5">
-                                <Network className="w-5 h-5 text-primary" />
-                                <div><p className="font-medium">{a.ip}:{a.port}</p><p className="text-xs text-gray-500">{a.is_default ? 'Primary' : 'Additional'}</p></div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                {/* Startup */}
-                {tab === 'startup' && (
-                    <div>
-                        {startup?.map((v: any, i: number) => {
-                            const envKey = v.env_variable;
-                            const currentValue = startupValues[envKey] ?? v.server_value ?? v.default_value ?? '';
-                            return (
-                                <div key={i} className="mb-4">
-                                    <div className="flex items-center justify-between mb-1">
-                                        <label className="text-sm text-gray-400">{v.name}</label>
-                                        <span className="text-xs text-gray-600 font-mono">{envKey}</span>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <input
-                                            className="input-field flex-1"
-                                            value={currentValue}
-                                            onChange={(e) => setStartupValues((prev) => ({ ...prev, [envKey]: e.target.value }))}
-                                            aria-label={v.name || 'Startup variable'}
-                                        />
-                                        <button
-                                            onClick={() => saveStartupVariable(envKey, currentValue)}
-                                            className="p-2.5 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors"
-                                            title="Save"
-                                        >
-                                            <Save className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                    {v.description && (
-                                        <p className="text-xs text-gray-600 mt-1">{v.description}</p>
-                                    )}
-                                </div>
-                            );
-                        })}
-                        {(!startup || startup.length === 0) && <p className="text-gray-500 text-center py-8">No startup variables</p>}
-                    </div>
-                )}
-
-                {/* Plugins */}
-                {tab === 'plugins' && (
-                    <div>
-                        {/* Server Software Info */}
-                        {serverSoftware && (
-                            <div className="flex items-center gap-3 mb-4 p-3 rounded-xl bg-white/5 border border-white/10">
-                                <Info className="w-4 h-4 text-primary flex-shrink-0" />
-                                <span className="text-sm text-gray-400">
-                                    Detected server software: <strong className="text-white">{serverSoftware.software !== 'unknown' ? serverSoftware.software.charAt(0).toUpperCase() + serverSoftware.software.slice(1) : 'Unknown'}</strong>
-                                    {serverSoftware.software !== 'unknown' && (
-                                        <span className="text-gray-500"> — installing to <code className="text-primary/80 bg-primary/5 px-1 py-0.5 rounded text-xs">/{serverSoftware.type === 'mod' ? 'mods' : 'plugins'}/</code></span>
-                                    )}
-                                </span>
-                            </div>
-                        )}
-
-                        {/* Installed plugins (show at top for visibility) */}
-                        {installedPlugins.length > 0 && (
-                            <div className="mb-6">
-                                <div className="flex items-center justify-between mb-3">
-                                    <h3 className="font-semibold flex items-center gap-2">
-                                        <Puzzle className="w-4 h-4 text-green-400" />
-                                        Installed ({installedPlugins.length})
-                                    </h3>
-                                    <button
-                                        onClick={async () => {
-                                            if (!server?.pteroUuid) return;
-                                            setCheckingUpdates(true);
-                                            try {
-                                                const { data } = await pluginsApi.checkUpdates(server.pteroUuid);
-                                                setPluginUpdates(data || []);
-                                                toast.success(`Found info for ${(data || []).length} plugins`);
-                                            } catch { toast.error('Failed to check updates'); }
-                                            finally { setCheckingUpdates(false); }
-                                        }}
-                                        disabled={checkingUpdates}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
-                                    >
-                                        {checkingUpdates ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                                        {checkingUpdates ? 'Checking...' : 'Check Updates'}
-                                    </button>
-                                </div>
-                                <div className="grid gap-2 sm:grid-cols-2">
-                                    {installedPlugins.map((p: any, i: number) => {
-                                        const update = pluginUpdates.find((u: any) => u.fileName === p.name);
-                                        return (
-                                        <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-white/5 border border-white/10 group">
-                                            {update?.iconUrl ? (
-                                                <img src={update.iconUrl} alt="" className="w-8 h-8 rounded-lg object-cover" />
-                                            ) : (
-                                                <Puzzle className="w-4 h-4 text-green-400 flex-shrink-0" />
-                                            )}
-                                            <div className="flex-1 min-w-0">
-                                                <span className="text-sm font-medium truncate block">{update?.title || p.name}</span>
-                                                <span className="text-xs text-gray-500">
-                                                    {(p.size / 1024).toFixed(0)}KB
-                                                    {update?.downloads && <span className="ml-2">{update.downloads.toLocaleString()} downloads</span>}
-                                                    {update?.source && <span className="ml-1 text-gray-600">· {update.source}</span>}
-                                                </span>
-                                            </div>
-                                            <button onClick={() => removePlugin(p.name)}
-                                                className="p-1.5 rounded text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors opacity-0 group-hover:opacity-100" title="Remove">
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                        </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Divider if installed plugins shown */}
-                        {installedPlugins.length > 0 && <div className="border-t border-white/10 mb-6" />}
-
-                        {/* Source Tabs */}
-                        <div className="flex gap-2 mb-4">
-                            <button onClick={() => { setPluginSource('modrinth'); setPluginResults([]); setSelectedProject(null); }}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${pluginSource === 'modrinth' ? 'bg-green-500/10 text-green-400' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-                                Modrinth
-                            </button>
-                            <button onClick={() => { setPluginSource('spiget'); setPluginResults([]); setSelectedProject(null); }}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${pluginSource === 'spiget' ? 'bg-orange-500/10 text-orange-400' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-                                SpigotMC
-                            </button>
-                        </div>
-
-                        {/* Warning for mod-based servers using Spiget */}
-                        {pluginSource === 'spiget' && serverSoftware?.type === 'mod' && (
-                            <div className="flex items-center gap-2 p-3 mb-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
-                                <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0" />
-                                <span className="text-xs text-yellow-400">SpigotMC only has Bukkit/Spigot plugins. Your server uses <strong>{serverSoftware.software}</strong> — use Modrinth for compatible mods.</span>
-                            </div>
-                        )}
-
-                        {/* Search */}
-                        <div className="flex gap-2 mb-6">
-                            <input value={pluginSearch} onChange={(e) => setPluginSearch(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && searchPlugins()}
-                                placeholder={`Search ${pluginSource === 'modrinth' ? 'Modrinth' : 'SpigotMC'}...`}
-                                className="input-field flex-1" />
-                            <button onClick={searchPlugins} className="btn-primary">Search</button>
-                        </div>
-
-                        {/* Modrinth Version Selector */}
-                        {selectedProject && pluginSource === 'modrinth' && (
-                            <div className="mb-6 p-4 rounded-xl bg-white/5 border border-white/10">
-                                <div className="flex items-center justify-between mb-3">
-                                    <div>
-                                        <h4 className="font-semibold">{selectedProject.title}</h4>
-                                        <p className="text-xs text-gray-500">{selectedProject.description}</p>
-                                    </div>
-                                    <button onClick={() => { setSelectedProject(null); setPluginVersions([]); }} className="text-gray-400 hover:text-white text-sm">✕ Close</button>
-                                </div>
-                                <p className="text-sm text-gray-400 mb-2">Select version to install:</p>
-                                <div className="max-h-48 overflow-y-auto space-y-1.5">
-                                    {pluginVersions.map((v: any) => (
-                                        <div key={v.id} className="flex items-center justify-between p-2.5 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
-                                            <div>
-                                                <span className="text-sm font-medium">{v.version_number}</span>
-                                                <span className="text-xs text-gray-500 ml-2">{v.loaders?.join(', ')}</span>
-                                                <span className="text-xs text-gray-600 ml-2">{v.game_versions?.slice(0, 3).join(', ')}</span>
-                                            </div>
-                                            <button
-                                                onClick={() => installModrinthVersion(v.id)}
-                                                disabled={installingPlugin === v.id}
-                                                className="text-xs px-3 py-1.5 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors disabled:opacity-50"
-                                            >
-                                                {installingPlugin === v.id ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Install'}
-                                            </button>
-                                        </div>
-                                    ))}
-                                    {pluginVersions.length === 0 && <p className="text-gray-500 text-sm text-center py-4">Loading versions...</p>}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Search Results */}
-                        <div className="grid gap-3">
-                            {pluginSource === 'modrinth' ? (
-                                pluginResults.map((p: any) => (
-                                    <div key={p.project_id} className="flex items-center gap-4 p-4 rounded-lg bg-white/5 hover:bg-white/10 transition-all">
-                                        {p.icon_url ? (
-                                            <img src={p.icon_url} alt="" className="w-10 h-10 rounded-lg" />
-                                        ) : (
-                                            <Puzzle className="w-10 h-10 text-primary flex-shrink-0" />
-                                        )}
-                                        <div className="flex-1 min-w-0">
-                                            <p className="font-medium truncate">{p.title}</p>
-                                            <p className="text-xs text-gray-500 truncate">{p.description}</p>
-                                        </div>
-                                        <span className="text-xs text-gray-500 whitespace-nowrap">{(p.downloads || 0).toLocaleString()}</span>
-                                        <button onClick={() => viewModrinthVersions(p)}
-                                            className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors whitespace-nowrap">
-                                            Versions
-                                        </button>
-                                    </div>
-                                ))
-                            ) : (
-                                pluginResults.map((p: any) => (
-                                    <div key={p.id} className="flex items-center gap-4 p-4 rounded-lg bg-white/5 hover:bg-white/10 transition-all">
-                                        {p.icon?.url ? (
-                                            <img src={`https://api.spiget.org/v2/${p.icon.url}`} alt="" className="w-10 h-10 rounded-lg" />
-                                        ) : (
-                                            <Puzzle className="w-10 h-10 text-orange-400 flex-shrink-0" />
-                                        )}
-                                        <div className="flex-1 min-w-0">
-                                            <p className="font-medium truncate">{p.name}</p>
-                                            <p className="text-xs text-gray-500 truncate">{p.tag}</p>
-                                        </div>
-                                        <span className="text-xs text-gray-500 whitespace-nowrap">{(p.downloads || 0).toLocaleString()}</span>
-                                        {p.premium ? (
-                                            <span className="text-xs px-3 py-1.5 rounded-lg bg-yellow-500/10 text-yellow-400 whitespace-nowrap">Premium</span>
-                                        ) : p.external ? (
-                                            <span className="text-xs px-3 py-1.5 rounded-lg bg-gray-500/10 text-gray-400 whitespace-nowrap cursor-help" title="External resource — must be downloaded manually">External</span>
-                                        ) : (
-                                        <button onClick={() => installSpigetResource(p.id)}
-                                            disabled={installingPlugin === String(p.id)}
-                                            className="text-xs px-3 py-1.5 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 transition-colors whitespace-nowrap disabled:opacity-50">
-                                            {installingPlugin === String(p.id) ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Install'}
-                                        </button>
-                                        )}
-                                    </div>
-                                ))
-                            )}
-                        </div>
-
-                        {/* No search results state */}
-                        {pluginSearch.trim() && pluginResults.length === 0 && (
-                            <div className="text-center py-8">
-                                <Search className="w-8 h-8 mx-auto mb-2 text-gray-600" />
-                                <p className="text-gray-500 text-sm">No results found for &quot;{pluginSearch}&quot;</p>
-                                <p className="text-xs text-gray-600 mt-1">Try different keywords or switch to {pluginSource === 'modrinth' ? 'SpigotMC' : 'Modrinth'}</p>
-                            </div>
-                        )}
-
-                        {/* Initial state when no search */}
-                        {!pluginSearch.trim() && pluginResults.length === 0 && installedPlugins.length === 0 && (
-                            <div className="text-center py-12">
-                                <Puzzle className="w-12 h-12 mx-auto mb-3 text-gray-600 opacity-50" />
-                                <p className="text-gray-400 font-medium">Search for plugins to install</p>
-                                <p className="text-sm text-gray-600 mt-1">Browse thousands of {serverSoftware?.type === 'mod' ? 'mods' : 'plugins'} from Modrinth and SpigotMC</p>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* Players */}
-                {tab === 'players' && (
-                    <div className="space-y-6">
-                        {/* Ban Modal */}
-                        {banModal && (
-                            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setBanModal(null)}>
-                                <div className="glass-card p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
-                                    <div className="flex items-center justify-between mb-4">
-                                        <h3 className="text-lg font-semibold flex items-center gap-2">
-                                            <UserX className="w-5 h-5 text-red-400" /> Ban Player
-                                        </h3>
-                                        <button onClick={() => setBanModal(null)} className="p-1 rounded hover:bg-white/10 transition-colors">
-                                            <X className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                    <div className="flex items-center gap-3 mb-4 p-3 rounded-lg bg-white/5">
-                                        <img src={`https://mc-heads.net/avatar/${banModal.player}/32`} alt="" className="w-8 h-8 rounded" />
-                                        <span className="font-medium">{banModal.player}</span>
-                                    </div>
-                                    <label className="text-sm text-gray-400 mb-1 block">Ban Reason (optional)</label>
-                                    <input
-                                        value={banModal.reason}
-                                        onChange={(e) => setBanModal({ ...banModal, reason: e.target.value })}
-                                        placeholder="e.g. Griefing, Hacking..."
-                                        className="input-field w-full mb-4"
-                                        onKeyDown={(e) => e.key === 'Enter' && playerAction('ban', banModal.player, banModal.reason)}
-                                        autoFocus
-                                    />
-                                    <div className="flex gap-2 justify-end">
-                                        <button onClick={() => setBanModal(null)} className="btn-secondary text-sm px-4">Cancel</button>
-                                        <button
-                                            onClick={() => playerAction('ban', banModal.player, banModal.reason)}
-                                            disabled={playerActionLoading}
-                                            className="px-4 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors text-sm font-medium disabled:opacity-50 flex items-center gap-2"
-                                        >
-                                            {playerActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserX className="w-4 h-4" />}
-                                            Ban Player
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Kick Modal */}
-                        {kickModal && (
-                            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setKickModal(null)}>
-                                <div className="glass-card p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
-                                    <div className="flex items-center justify-between mb-4">
-                                        <h3 className="text-lg font-semibold flex items-center gap-2">
-                                            <LogOut className="w-5 h-5 text-orange-400" /> Kick Player
-                                        </h3>
-                                        <button onClick={() => setKickModal(null)} className="p-1 rounded hover:bg-white/10 transition-colors">
-                                            <X className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                    <div className="flex items-center gap-3 mb-4 p-3 rounded-lg bg-white/5">
-                                        <img src={`https://mc-heads.net/avatar/${kickModal.player}/32`} alt="" className="w-8 h-8 rounded" />
-                                        <span className="font-medium">{kickModal.player}</span>
-                                    </div>
-                                    <label className="text-sm text-gray-400 mb-1 block">Kick Reason (optional)</label>
-                                    <input
-                                        value={kickModal.reason}
-                                        onChange={(e) => setKickModal({ ...kickModal, reason: e.target.value })}
-                                        placeholder="e.g. AFK, Breaking rules..."
-                                        className="input-field w-full mb-4"
-                                        onKeyDown={(e) => e.key === 'Enter' && playerAction('kick', kickModal.player, kickModal.reason)}
-                                        autoFocus
-                                    />
-                                    <div className="flex gap-2 justify-end">
-                                        <button onClick={() => setKickModal(null)} className="btn-secondary text-sm px-4">Cancel</button>
-                                        <button
-                                            onClick={() => playerAction('kick', kickModal.player, kickModal.reason)}
-                                            disabled={playerActionLoading}
-                                            className="px-4 py-2 rounded-lg bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 transition-colors text-sm font-medium disabled:opacity-50 flex items-center gap-2"
-                                        >
-                                            {playerActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
-                                            Kick Player
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Online Players Section */}
-                        <div className="rounded-xl bg-white/5 border border-white/10 p-4">
-                            <div className="flex items-center justify-between mb-3">
-                                <h3 className="flex items-center gap-2 font-semibold">
-                                    {onlinePlayers.count > 0 ? <Wifi className="w-4 h-4 text-green-400" /> : <WifiOff className="w-4 h-4 text-gray-500" />}
-                                    Online Players
-                                    {onlinePlayers.max > 0 && (
-                                        <span className="text-sm font-normal text-gray-400">({onlinePlayers.count}/{onlinePlayers.max})</span>
-                                    )}
-                                </h3>
-                                <button
-                                    onClick={() => {
-                                        if (!server?.pteroUuid) return;
-                                        playersApi.online(server.pteroUuid).then((r) => {
-                                            setOnlinePlayers(r.data || { count: 0, max: 0, players: [] });
-                                            toast.success('Refreshed online players');
-                                        }).catch(() => toast.error('Failed to fetch online players'));
-                                    }}
-                                    className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
-                                    title="Refresh online players"
-                                >
-                                    <RefreshCw className="w-3.5 h-3.5" />
-                                </button>
-                            </div>
-                            {onlinePlayers.players.length > 0 ? (
-                                <div className="flex flex-wrap gap-2">
-                                    {onlinePlayers.players.map((name) => (
-                                        <div key={name} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-500/10 border border-green-500/20">
-                                            <img src={`https://mc-heads.net/avatar/${name}/24`} alt="" className="w-6 h-6 rounded" />
-                                            <span className="text-sm font-medium text-green-300">{name}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <p className="text-sm text-gray-500">No players online or server is offline. Click refresh to check.</p>
-                            )}
-                        </div>
-
-                        {/* Player Actions Bar */}
-                        <div className="rounded-xl bg-white/5 border border-white/10 p-4">
-                            <h3 className="flex items-center gap-2 font-semibold mb-3">
-                                <UserPlus className="w-4 h-4 text-primary" />
-                                Player Actions
-                            </h3>
-                            <div className="flex gap-2 flex-wrap">
-                                <div className="relative flex-1 min-w-[200px]">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                                    <input
-                                        value={playerInput}
-                                        onChange={(e) => setPlayerInput(e.target.value)}
-                                        placeholder="Enter player name..."
-                                        className="input-field w-full pl-10"
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' && playerInput.trim()) playerAction('whitelist');
-                                        }}
-                                        disabled={playerActionLoading}
-                                    />
-                                </div>
-                                <button
-                                    onClick={() => playerAction('whitelist')}
-                                    disabled={playerActionLoading || !playerInput.trim()}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors text-sm font-medium disabled:opacity-50"
-                                >
-                                    <Shield className="w-4 h-4" /> Whitelist
-                                </button>
-                                <button
-                                    onClick={() => playerAction('op')}
-                                    disabled={playerActionLoading || !playerInput.trim()}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 border border-yellow-500/20 transition-colors text-sm font-medium disabled:opacity-50"
-                                >
-                                    <Star className="w-4 h-4" /> OP
-                                </button>
-                                <button
-                                    onClick={openBanModal}
-                                    disabled={playerActionLoading || !playerInput.trim()}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 transition-colors text-sm font-medium disabled:opacity-50"
-                                >
-                                    <UserX className="w-4 h-4" /> Ban
-                                </button>
-                                <button
-                                    onClick={openKickModal}
-                                    disabled={playerActionLoading || !playerInput.trim()}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 border border-orange-500/20 transition-colors text-sm font-medium disabled:opacity-50"
-                                >
-                                    <LogOut className="w-4 h-4" /> Kick
-                                </button>
-                            </div>
-                            {playerActionLoading && (
-                                <div className="flex items-center gap-2 mt-3 text-sm text-gray-400">
-                                    <Loader2 className="w-4 h-4 animate-spin" /> Processing...
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Player Lists Grid */}
-                        <div className="grid md:grid-cols-3 gap-4">
-                            {/* Whitelist */}
-                            <div className="rounded-xl bg-white/5 border border-white/10 overflow-hidden">
-                                <div className="flex items-center justify-between px-4 py-3 bg-blue-500/5 border-b border-white/10">
-                                    <h4 className="flex items-center gap-2 text-sm font-semibold">
-                                        <Shield className="w-4 h-4 text-blue-400" />
-                                        <span>Whitelist</span>
-                                        <span className="text-xs font-normal text-gray-500 bg-white/5 px-1.5 py-0.5 rounded">{whitelist.length}</span>
-                                    </h4>
-                                    {playersRefreshing && <Loader2 className="w-3 h-3 animate-spin text-gray-500" />}
-                                </div>
-                                <div className="p-2 max-h-64 overflow-y-auto">
-                                    {whitelist.map((p: any, i: number) => (
-                                        <div key={i} className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors group">
-                                            <img src={`https://mc-heads.net/avatar/${p.name}/24`} alt="" className="w-6 h-6 rounded flex-shrink-0" />
-                                            <span className="text-sm flex-1 truncate">{p.name || JSON.stringify(p)}</span>
-                                            <button
-                                                onClick={async () => {
-                                                    try {
-                                                        await playersApi.removeWhitelist(server.pteroUuid, p.name);
-                                                        toast.success(`Removed ${p.name} from whitelist`);
-                                                        setWhitelist((prev) => prev.filter((_, idx) => idx !== i));
-                                                    } catch { toast.error(`Failed to remove ${p.name}`); }
-                                                }}
-                                                className="p-1 rounded text-gray-600 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
-                                                title="Remove from whitelist"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                        </div>
-                                    ))}
-                                    {whitelist.length === 0 && (
-                                        <div className="flex flex-col items-center py-6 text-gray-600">
-                                            <Shield className="w-8 h-8 mb-2 opacity-30" />
-                                            <span className="text-xs">No whitelisted players</span>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Operators */}
-                            <div className="rounded-xl bg-white/5 border border-white/10 overflow-hidden">
-                                <div className="flex items-center justify-between px-4 py-3 bg-yellow-500/5 border-b border-white/10">
-                                    <h4 className="flex items-center gap-2 text-sm font-semibold">
-                                        <Star className="w-4 h-4 text-yellow-400" />
-                                        <span>Operators</span>
-                                        <span className="text-xs font-normal text-gray-500 bg-white/5 px-1.5 py-0.5 rounded">{ops.length}</span>
-                                    </h4>
-                                    {playersRefreshing && <Loader2 className="w-3 h-3 animate-spin text-gray-500" />}
-                                </div>
-                                <div className="p-2 max-h-64 overflow-y-auto">
-                                    {ops.map((p: any, i: number) => (
-                                        <div key={i} className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors group">
-                                            <img src={`https://mc-heads.net/avatar/${p.name}/24`} alt="" className="w-6 h-6 rounded flex-shrink-0" />
-                                            <div className="flex-1 min-w-0">
-                                                <span className="text-sm truncate block">{p.name || JSON.stringify(p)}</span>
-                                                {p.level && <span className="text-xs text-yellow-500/60">Level {p.level}</span>}
-                                            </div>
-                                            <button
-                                                onClick={async () => {
-                                                    try {
-                                                        await playersApi.deop(server.pteroUuid, p.name);
-                                                        toast.success(`Removed OP from ${p.name}`);
-                                                        setOps((prev) => prev.filter((_, idx) => idx !== i));
-                                                    } catch { toast.error(`Failed to deop ${p.name}`); }
-                                                }}
-                                                className="p-1 rounded text-gray-600 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
-                                                title="Remove OP"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                        </div>
-                                    ))}
-                                    {ops.length === 0 && (
-                                        <div className="flex flex-col items-center py-6 text-gray-600">
-                                            <Star className="w-8 h-8 mb-2 opacity-30" />
-                                            <span className="text-xs">No operators</span>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Banned */}
-                            <div className="rounded-xl bg-white/5 border border-white/10 overflow-hidden">
-                                <div className="flex items-center justify-between px-4 py-3 bg-red-500/5 border-b border-white/10">
-                                    <h4 className="flex items-center gap-2 text-sm font-semibold">
-                                        <UserX className="w-4 h-4 text-red-400" />
-                                        <span>Banned</span>
-                                        <span className="text-xs font-normal text-gray-500 bg-white/5 px-1.5 py-0.5 rounded">{banned.length}</span>
-                                    </h4>
-                                    {playersRefreshing && <Loader2 className="w-3 h-3 animate-spin text-gray-500" />}
-                                </div>
-                                <div className="p-2 max-h-64 overflow-y-auto">
-                                    {banned.map((p: any, i: number) => (
-                                        <div key={i} className="flex items-center gap-3 p-2 rounded-lg hover:bg-red-500/5 transition-colors group">
-                                            <img src={`https://mc-heads.net/avatar/${p.name}/24`} alt="" className="w-6 h-6 rounded flex-shrink-0 opacity-60" />
-                                            <div className="flex-1 min-w-0">
-                                                <span className="text-sm truncate block text-red-300">{p.name || JSON.stringify(p)}</span>
-                                                {p.reason && p.reason !== 'Banned by an operator.' && (
-                                                    <span className="text-xs text-gray-500 flex items-center gap-1">
-                                                        <MessageSquare className="w-3 h-3" /> {p.reason}
-                                                    </span>
-                                                )}
-                                                {p.created && (
-                                                    <span className="text-xs text-gray-600">{new Date(p.created).toLocaleDateString()}</span>
-                                                )}
-                                            </div>
-                                            <button
-                                                onClick={async () => {
-                                                    try {
-                                                        await playersApi.unban(server.pteroUuid, p.name);
-                                                        toast.success(`Unbanned ${p.name}`);
-                                                        setBanned((prev) => prev.filter((_, idx) => idx !== i));
-                                                    } catch { toast.error(`Failed to unban ${p.name}`); }
-                                                }}
-                                                className="p-1.5 rounded text-gray-600 hover:text-green-400 hover:bg-green-500/10 opacity-0 group-hover:opacity-100 transition-all"
-                                                title="Unban player"
-                                            >
-                                                <RefreshCw className="w-3.5 h-3.5" />
-                                            </button>
-                                        </div>
-                                    ))}
-                                    {banned.length === 0 && (
-                                        <div className="flex flex-col items-center py-6 text-gray-600">
-                                            <UserX className="w-8 h-8 mb-2 opacity-30" />
-                                            <span className="text-xs">No banned players</span>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Refresh All */}
-                        <div className="flex justify-center">
-                            <button
-                                onClick={() => loadTabData('players')}
-                                disabled={playersRefreshing}
-                                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition-colors disabled:opacity-50"
-                            >
-                                <RefreshCw className={`w-4 h-4 ${playersRefreshing ? 'animate-spin' : ''}`} />
-                                Refresh All Lists
-                            </button>
-                        </div>
-                    </div>
-                )}
-            </div>
+          </div>
         </div>
+      )}
+
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <Link href="/dashboard/servers" className="w-9 h-9 rounded-xl flex items-center justify-center text-gray-500 hover:text-white transition-colors shrink-0" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <ChevronLeft className="w-4 h-4" />
+          </Link>
+          <div className="min-w-0">
+            <h1 className="text-xl font-display font-bold text-white truncate">{server.name}</h1>
+            <div className="flex items-center gap-2 text-[12px] mt-0.5">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-medium" style={{ background: sc.bg, border: `1px solid ${sc.border}` }}>
+                <span className={`w-1.5 h-1.5 rounded-full ${sc.dot}`} />
+                <span className={sc.text}>{status}</span>
+              </span>
+              <span className="text-gray-500 flex items-center gap-1"><MemoryStick className="w-3 h-3" />{server.ram >= 1024 ? `${(server.ram/1024).toFixed(1)}G` : `${server.ram}M`}</span>
+              <span className="text-gray-500 flex items-center gap-1"><Cpu className="w-3 h-3" />{server.cpu}%</span>
+              <span className="text-gray-500 flex items-center gap-1"><HardDrive className="w-3 h-3" />{server.disk >= 1024 ? `${(server.disk/1024).toFixed(1)}G` : `${server.disk}M`}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Power Controls */}
+        <div className="flex items-center gap-2 shrink-0">
+          {[
+            { signal: 'start', icon: Play, color: 'text-emerald-400', bg: 'rgba(16,185,129,0.06)', hoverBg: 'rgba(16,185,129,0.12)', disabled: status === 'running' },
+            { signal: 'stop', icon: Square, color: 'text-red-400', bg: 'rgba(239,68,68,0.06)', hoverBg: 'rgba(239,68,68,0.12)', disabled: status === 'offline' },
+            { signal: 'restart', icon: RotateCcw, color: 'text-yellow-400', bg: 'rgba(234,179,8,0.06)', hoverBg: 'rgba(234,179,8,0.12)', disabled: status === 'offline' },
+            { signal: 'kill', icon: Skull, color: 'text-red-500', bg: 'rgba(239,68,68,0.06)', hoverBg: 'rgba(239,68,68,0.12)', disabled: status === 'offline' },
+          ].map(p => (
+            <button key={p.signal} onClick={() => handlePower(p.signal)} disabled={powerLoading || p.disabled || isSuspended}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all disabled:opacity-30 ${p.color}`}
+              style={{ background: p.bg }}
+              title={p.signal}>
+              <p.icon className="w-4 h-4" />
+            </button>
+          ))}
+          <button onClick={() => setDeleteConfirm(true)} className="w-9 h-9 rounded-xl flex items-center justify-center text-red-400 transition-all" style={{ background: 'rgba(239,68,68,0.06)' }} title="Delete">
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-none p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium whitespace-nowrap transition-all ${
+              tab === t.id ? 'text-primary' : 'text-gray-500 hover:text-white hover:bg-white/[0.03]'
+            }`}
+            style={tab === t.id ? { background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.15)' } : undefined}>
+            <t.icon className="w-3.5 h-3.5" />{t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      <AnimatePresence mode="wait">
+        <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.15 }}>
+          {tab === 'console' && <ConsoleTab serverId={id} />}
+          {tab === 'files' && <FilesTab serverId={id} />}
+          {tab === 'databases' && <DatabasesTab serverId={id} />}
+          {tab === 'backups' && <BackupsTab serverId={id} />}
+          {tab === 'network' && <NetworkTab serverId={id} />}
+          {tab === 'startup' && <StartupTab serverId={id} />}
+          {tab === 'plugins' && <PluginsTab serverUuid={server.pteroUuid} />}
+          {tab === 'players' && <PlayersTab serverUuid={server.pteroUuid} />}
+        </motion.div>
+      </AnimatePresence>
+
+      {/* Delete Confirm */}
+      <AnimatePresence>
+        {deleteConfirm && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="neo-card max-w-md w-full overflow-hidden">
+              <div className="p-5" style={{ background: 'linear-gradient(180deg, rgba(239,68,68,0.06) 0%, transparent 100%)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <h3 className="text-base font-semibold text-white flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-red-400" /> Delete Server</h3>
+              </div>
+              <div className="p-5">
+                <p className="text-sm text-gray-400">This will permanently delete <strong className="text-white">{server.name}</strong> and all its data. This action cannot be undone.</p>
+                <div className="flex gap-3 justify-end mt-5">
+                  <button onClick={() => setDeleteConfirm(false)} className="btn-secondary text-sm">Cancel</button>
+                  <button onClick={handleDelete} className="btn-danger text-sm">Delete Forever</button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ──────── CONSOLE TAB ──────── */
+function ConsoleTab({ serverId }: { serverId: string }) {
+  const [lines, setLines] = useState<string[]>([]);
+  const [cmd, setCmd] = useState('');
+  const [history, setHistory] = useState<string[]>([]);
+  const [histIdx, setHistIdx] = useState(-1);
+  const [sending, setSending] = useState(false);
+  const logRef = useRef<HTMLDivElement>(null);
+
+  const fetchConsole = useCallback(async () => {
+    try {
+      const res = await serversApi.console(serverId);
+      const data = res.data;
+      if (Array.isArray(data)) setLines(data.map(stripAnsi));
+      else if (data?.logs) setLines((Array.isArray(data.logs) ? data.logs : data.logs.split('\n')).map(stripAnsi));
+    } catch {}
+  }, [serverId]);
+
+  useEffect(() => { fetchConsole(); const iv = setInterval(fetchConsole, 5000); return () => clearInterval(iv); }, [fetchConsole]);
+  useEffect(() => { logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: 'smooth' }); }, [lines]);
+
+  const sendCmd = async () => {
+    if (!cmd.trim()) return;
+    setSending(true);
+    try { await serversApi.command(serverId, cmd); setHistory(p => [cmd, ...p.slice(0, 49)]); setCmd(''); setHistIdx(-1); setTimeout(fetchConsole, 500); }
+    catch { toast.error('Failed to send command'); }
+    finally { setSending(false); }
+  };
+
+  const handleKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') sendCmd();
+    if (e.key === 'ArrowUp' && history.length) { const i = Math.min(histIdx + 1, history.length - 1); setHistIdx(i); setCmd(history[i]); }
+    if (e.key === 'ArrowDown') { const i = histIdx - 1; if (i < 0) { setHistIdx(-1); setCmd(''); } else { setHistIdx(i); setCmd(history[i]); } }
+  };
+
+  return (
+    <div className="neo-card overflow-hidden">
+      <div ref={logRef} className="h-[400px] sm:h-[500px] overflow-y-auto p-4 font-mono text-xs sm:text-sm text-gray-300 space-y-0.5 bg-[#0d1117]">
+        {lines.length === 0 && <p className="text-gray-600 italic">No console output...</p>}
+        {lines.map((l, i) => <div key={i} className="whitespace-pre-wrap break-all leading-5">{l}</div>)}
+      </div>
+      <div className="flex items-center border-t border-white/5 bg-white/[0.02]">
+        <span className="pl-4 text-primary font-mono text-sm">{'>'}</span>
+        <input type="text" value={cmd} onChange={e => setCmd(e.target.value)} onKeyDown={handleKey}
+          placeholder="Type a command..." className="flex-1 bg-transparent px-3 py-3 text-sm text-white outline-none font-mono" />
+        <button onClick={sendCmd} disabled={sending || !cmd.trim()} className="px-4 py-3 text-primary hover:bg-white/5 disabled:opacity-30 transition-colors">
+          <Send className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ──────── FILES TAB ──────── */
+function FilesTab({ serverId }: { serverId: string }) {
+  const [dir, setDir] = useState('/');
+  const [files, setFiles] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<{ name: string; content: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [newFolder, setNewFolder] = useState('');
+  const [showNewFolder, setShowNewFolder] = useState(false);
+  const [renaming, setRenaming] = useState<any>(null);
+  const [newName, setNewName] = useState('');
+
+  const fetchFiles = useCallback(async () => {
+    setLoading(true);
+    try { const res = await serversApi.listFiles(serverId, dir); setFiles(res.data?.data || res.data || []); }
+    catch { toast.error('Failed to load files'); }
+    finally { setLoading(false); }
+  }, [serverId, dir]);
+
+  useEffect(() => { fetchFiles(); }, [fetchFiles]);
+
+  const openFile = async (name: string) => {
+    try {
+      const path = dir === '/' ? `/${name}` : `${dir}/${name}`;
+      const res = await serversApi.readFile(serverId, path);
+      setEditing({ name: path, content: typeof res.data === 'string' ? res.data : res.data?.content || JSON.stringify(res.data) });
+    } catch { toast.error('Cannot open file'); }
+  };
+
+  const saveFile = async () => {
+    if (!editing) return;
+    setSaving(true);
+    try { await serversApi.writeFile(serverId, editing.name, editing.content); toast.success('Saved!'); setEditing(null); }
+    catch { toast.error('Save failed'); }
+    finally { setSaving(false); }
+  };
+
+  const deleteFile = async (name: string, isDir: boolean) => {
+    if (!confirm(`Delete ${isDir ? 'folder' : 'file'} "${name}"?`)) return;
+    try { await serversApi.deleteFiles(serverId, dir, [name]); toast.success('Deleted'); fetchFiles(); }
+    catch { toast.error('Delete failed'); }
+  };
+
+  const createFolder = async () => {
+    if (!newFolder.trim()) return;
+    try { await serversApi.createFolder(serverId, dir, newFolder); toast.success('Created'); setNewFolder(''); setShowNewFolder(false); fetchFiles(); }
+    catch { toast.error('Failed'); }
+  };
+
+  const handleRename = async () => {
+    if (!renaming || !newName.trim()) return;
+    try { await serversApi.renameFile(serverId, dir, renaming.name, newName); toast.success('Renamed'); setRenaming(null); setNewName(''); fetchFiles(); }
+    catch { toast.error('Rename failed'); }
+  };
+
+  const navigate = (name: string) => setDir(dir === '/' ? `/${name}` : `${dir}/${name}`);
+  const goUp = () => { const parts = dir.split('/').filter(Boolean); parts.pop(); setDir('/' + parts.join('/')); };
+
+  if (editing) {
+    return (
+      <div className="neo-card overflow-hidden">
+        <div className="flex items-center justify-between p-3 border-b border-white/5">
+          <span className="text-sm text-gray-300 font-mono truncate">{editing.name}</span>
+          <div className="flex gap-2">
+            <button onClick={() => setEditing(null)} className="btn-secondary text-xs">Cancel</button>
+            <button onClick={saveFile} disabled={saving} className="btn-primary text-xs">{saving ? 'Saving...' : 'Save'}</button>
+          </div>
+        </div>
+        <textarea value={editing.content} onChange={e => setEditing({ ...editing, content: e.target.value })}
+          className="w-full h-[500px] bg-[#0d1117] p-4 font-mono text-sm text-gray-300 outline-none resize-none" spellCheck={false} />
+      </div>
     );
+  }
+
+  return (
+    <div className="neo-card overflow-hidden">
+      <div className="flex items-center gap-2 p-3 border-b border-white/5 flex-wrap">
+        <button onClick={goUp} disabled={dir === '/'} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 hover:text-white disabled:opacity-30">
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <span className="text-sm font-mono text-gray-400 truncate flex-1">{dir}</span>
+        <button onClick={() => setShowNewFolder(!showNewFolder)} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 hover:text-white">
+          <Plus className="w-4 h-4" />
+        </button>
+        <button onClick={fetchFiles} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 hover:text-white">
+          <RefreshCw className="w-4 h-4" />
+        </button>
+      </div>
+
+      {showNewFolder && (
+        <div className="flex items-center gap-2 p-3 border-b border-white/5 bg-white/[0.02]">
+          <input type="text" value={newFolder} onChange={e => setNewFolder(e.target.value)} placeholder="Folder name"
+            className="input-field text-sm flex-1" onKeyDown={e => e.key === 'Enter' && createFolder()} />
+          <button onClick={createFolder} className="btn-primary text-xs">Create</button>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="p-8 flex justify-center"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>
+      ) : files.length === 0 ? (
+        <div className="p-8 text-center text-gray-500 text-sm">Empty directory</div>
+      ) : (
+        <div className="divide-y divide-white/5">
+          {[...files].sort((a, b) => (b.is_file === false ? 1 : 0) - (a.is_file === false ? 1 : 0) || a.name.localeCompare(b.name)).map((f: any) => (
+            <div key={f.name} className="flex items-center gap-3 px-4 py-2.5 hover:bg-white/[0.02] group">
+              {f.is_file === false || f.mime === 'inode/directory' ? (
+                <button onClick={() => navigate(f.name)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                  <Folder className="w-4 h-4 text-primary shrink-0" />
+                  <span className="text-sm text-gray-200 truncate">{f.name}</span>
+                </button>
+              ) : (
+                <button onClick={() => openFile(f.name)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                  <File className="w-4 h-4 text-gray-400 shrink-0" />
+                  <span className="text-sm text-gray-300 truncate">{f.name}</span>
+                  <span className="text-xs text-gray-600 ml-auto">{f.size ? (f.size > 1048576 ? `${(f.size/1048576).toFixed(1)}M` : `${(f.size/1024).toFixed(0)}K`) : ''}</span>
+                </button>
+              )}
+              <div className="hidden group-hover:flex items-center gap-1">
+                <button onClick={() => { setRenaming(f); setNewName(f.name); }} className="w-7 h-7 rounded flex items-center justify-center text-gray-500 hover:text-white">
+                  <Edit3 className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={() => deleteFile(f.name, f.is_file === false)} className="w-7 h-7 rounded flex items-center justify-center text-gray-500 hover:text-red-400">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Rename modal */}
+      <AnimatePresence>
+        {renaming && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} className="neo-card p-6 max-w-sm w-full space-y-4">
+              <h3 className="text-lg font-semibold text-white">Rename</h3>
+              <input type="text" value={newName} onChange={e => setNewName(e.target.value)} className="input-field" onKeyDown={e => e.key === 'Enter' && handleRename()} />
+              <div className="flex gap-3 justify-end">
+                <button onClick={() => setRenaming(null)} className="btn-secondary text-sm">Cancel</button>
+                <button onClick={handleRename} className="btn-primary text-sm">Rename</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ──────── DATABASES TAB ──────── */
+function DatabasesTab({ serverId }: { serverId: string }) {
+  const [dbs, setDbs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [name, setName] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [showPass, setShowPass] = useState<Record<string, boolean>>({});
+
+  const fetch = useCallback(async () => {
+    setLoading(true);
+    try { const r = await serversApi.databases(serverId); setDbs(r.data?.data || r.data || []); }
+    catch { toast.error('Failed to load databases'); }
+    finally { setLoading(false); }
+  }, [serverId]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+
+  const create = async () => {
+    if (!name.trim()) return;
+    setCreating(true);
+    try { await serversApi.createDb(serverId, name); toast.success('Database created'); setName(''); fetch(); }
+    catch (e: any) { toast.error(e?.response?.data?.message || 'Failed'); }
+    finally { setCreating(false); }
+  };
+
+  const remove = async (dbId: string) => {
+    if (!confirm('Delete this database?')) return;
+    try { await serversApi.deleteDb(serverId, dbId); toast.success('Deleted'); fetch(); }
+    catch { toast.error('Failed'); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="neo-card p-4 flex gap-3">
+        <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Database name" className="input-field flex-1 text-sm" onKeyDown={e => e.key === 'Enter' && create()} />
+        <button onClick={create} disabled={creating} className="btn-primary text-sm">{creating ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create'}</button>
+      </div>
+      {loading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div> :
+        dbs.length === 0 ? <div className="neo-card p-8 text-center text-gray-500 text-sm">No databases</div> :
+        <div className="grid gap-3">
+          {dbs.map((db: any) => (
+            <div key={db.id} className="neo-card p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2"><Database className="w-4 h-4 text-primary" /><span className="font-medium text-white text-sm">{db.name || db.database}</span></div>
+                <button onClick={() => remove(db.id)} className="text-gray-500 hover:text-red-400 transition-colors"><Trash2 className="w-4 h-4" /></button>
+              </div>
+              {db.host && <div className="grid grid-cols-2 gap-2 text-xs">
+                <div><span className="text-gray-500">Host:</span> <span className="text-gray-300">{db.host}:{db.port}</span></div>
+                <div><span className="text-gray-500">User:</span> <span className="text-gray-300">{db.username}</span></div>
+                {db.password && <div className="col-span-2 flex items-center gap-2">
+                  <span className="text-gray-500">Pass:</span>
+                  <span className="text-gray-300 font-mono">{showPass[db.id] ? db.password : '••••••••'}</span>
+                  <button onClick={() => setShowPass(p => ({ ...p, [db.id]: !p[db.id] }))} className="text-gray-500 hover:text-white">{showPass[db.id] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}</button>
+                  <button onClick={() => { navigator.clipboard.writeText(db.password); toast.success('Copied!'); }} className="text-gray-500 hover:text-white"><Copy className="w-3 h-3" /></button>
+                </div>}
+              </div>}
+            </div>
+          ))}
+        </div>}
+    </div>
+  );
+}
+
+/* ──────── BACKUPS TAB ──────── */
+function BackupsTab({ serverId }: { serverId: string }) {
+  const [backups, setBackups] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+
+  const fetch = useCallback(async () => {
+    setLoading(true);
+    try { const r = await serversApi.backups(serverId); setBackups(r.data?.data || r.data || []); }
+    catch { toast.error('Failed'); }
+    finally { setLoading(false); }
+  }, [serverId]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+
+  const create = async () => {
+    setCreating(true);
+    try { await serversApi.createBackup(serverId); toast.success('Backup started'); setTimeout(fetch, 3000); }
+    catch (e: any) { toast.error(e?.response?.data?.message || 'Failed'); }
+    finally { setCreating(false); }
+  };
+
+  const download = async (backupId: string) => {
+    try {
+      const r = await serversApi.downloadBackup(serverId, backupId);
+      const url = r.data?.url || r.data;
+      if (url && typeof url === 'string') window.open(url, '_blank');
+      else toast.error('No download URL');
+    } catch { toast.error('Download failed'); }
+  };
+
+  const remove = async (backupId: string) => {
+    if (!confirm('Delete this backup?')) return;
+    try { await serversApi.deleteBackup(serverId, backupId); toast.success('Deleted'); fetch(); }
+    catch { toast.error('Failed'); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <button onClick={create} disabled={creating} className="btn-primary text-sm flex items-center gap-2">
+          {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Create Backup
+        </button>
+      </div>
+      {loading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div> :
+        backups.length === 0 ? <div className="neo-card p-8 text-center text-gray-500 text-sm">No backups</div> :
+        <div className="grid gap-3">
+          {backups.map((b: any) => (
+            <div key={b.uuid || b.id} className="neo-card p-4 flex items-center justify-between">
+              <div>
+                <p className="font-medium text-white text-sm">{b.name || 'Backup'}</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {b.bytes ? (b.bytes > 1048576 ? `${(b.bytes/1048576).toFixed(1)} MB` : `${(b.bytes/1024).toFixed(0)} KB`) : ''}
+                  {b.created_at && ` · ${new Date(b.created_at).toLocaleDateString()}`}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {b.is_successful !== false && <button onClick={() => download(b.uuid || b.id)} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 hover:text-primary"><Download className="w-4 h-4" /></button>}
+                <button onClick={() => remove(b.uuid || b.id)} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 hover:text-red-400"><Trash2 className="w-4 h-4" /></button>
+              </div>
+            </div>
+          ))}
+        </div>}
+    </div>
+  );
+}
+
+/* ──────── NETWORK TAB ──────── */
+function NetworkTab({ serverId }: { serverId: string }) {
+  const [network, setNetwork] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    serversApi.network(serverId).then(r => setNetwork(r.data)).catch(() => toast.error('Failed'))
+      .finally(() => setLoading(false));
+  }, [serverId]);
+
+  if (loading) return <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>;
+
+  const allocs = network?.data || network?.allocations || (Array.isArray(network) ? network : [network].filter(Boolean));
+
+  return (
+    <div className="grid gap-3">
+      {allocs.length === 0 ? <div className="neo-card p-8 text-center text-gray-500 text-sm">No allocations</div> :
+        allocs.map((a: any, i: number) => (
+          <div key={i} className="neo-card p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Globe className="w-5 h-5 text-primary" />
+              <div>
+                <p className="font-mono text-white text-sm">{a.ip || a.alias || '0.0.0.0'}:{a.port}</p>
+                {a.is_default && <span className="text-xs text-primary">Primary</span>}
+              </div>
+            </div>
+            <button onClick={() => { navigator.clipboard.writeText(`${a.ip || a.alias}:${a.port}`); toast.success('Copied!'); }}
+              className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 hover:text-white">
+              <Copy className="w-4 h-4" />
+            </button>
+          </div>
+        ))}
+    </div>
+  );
+}
+
+/* ──────── STARTUP TAB ──────── */
+function StartupTab({ serverId }: { serverId: string }) {
+  const [vars, setVars] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<string | null>(null);
+
+  useEffect(() => {
+    serversApi.startup(serverId).then(r => {
+      const data = r.data?.data || r.data || [];
+      setVars(data);
+      const v: Record<string, string> = {};
+      data.forEach((vr: any) => { v[vr.env_variable] = vr.server_value ?? vr.default_value ?? ''; });
+      setValues(v);
+    }).catch(() => toast.error('Failed')).finally(() => setLoading(false));
+  }, [serverId]);
+
+  const save = async (key: string) => {
+    setSaving(key);
+    try { await serversApi.updateStartup(serverId, key, values[key]); toast.success('Updated'); }
+    catch { toast.error('Failed'); }
+    finally { setSaving(null); }
+  };
+
+  if (loading) return <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>;
+
+  return (
+    <div className="grid gap-3">
+      {vars.length === 0 ? <div className="neo-card p-8 text-center text-gray-500 text-sm">No startup variables</div> :
+        vars.map((v: any) => (
+          <div key={v.env_variable} className="neo-card p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-white">{v.name}</label>
+              <span className="text-xs text-gray-600 font-mono">{v.env_variable}</span>
+            </div>
+            {v.description && <p className="text-xs text-gray-500">{v.description}</p>}
+            <div className="flex gap-2">
+              <input type="text" value={values[v.env_variable] || ''} onChange={e => setValues(p => ({ ...p, [v.env_variable]: e.target.value }))}
+                className="input-field text-sm flex-1 font-mono" placeholder={v.default_value} />
+              <button onClick={() => save(v.env_variable)} disabled={saving === v.env_variable} className="btn-primary text-xs px-3">
+                {saving === v.env_variable ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Save'}
+              </button>
+            </div>
+          </div>
+        ))}
+    </div>
+  );
+}
+
+/* ──────── PLUGINS TAB ──────── */
+function PluginsTab({ serverUuid }: { serverUuid: string }) {
+  const [installed, setInstalled] = useState<any[]>([]);
+  const [software, setSoftware] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [searchQ, setSearchQ] = useState('');
+  const [results, setResults] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [installing, setInstalling] = useState<string | null>(null);
+  const [source, setSource] = useState<'modrinth' | 'spigot'>('modrinth');
+
+  useEffect(() => {
+    if (!serverUuid) return;
+    Promise.all([
+      pluginsApi.detect(serverUuid).then(r => setSoftware(r.data)).catch(() => {}),
+      pluginsApi.installed(serverUuid).then(r => setInstalled(r.data?.data || r.data || [])).catch(() => {}),
+    ]).finally(() => setLoading(false));
+  }, [serverUuid]);
+
+  const search = async () => {
+    if (!searchQ.trim()) return;
+    setSearching(true);
+    try {
+      if (source === 'modrinth') {
+        const loaders = software?.software ? [software.software] : undefined;
+        const r = await pluginsApi.modrinthSearch(searchQ, 20, 0, loaders);
+        setResults(r.data?.hits || r.data || []);
+      } else {
+        const r = await pluginsApi.spigetSearch(searchQ);
+        setResults(r.data || []);
+      }
+    } catch { toast.error('Search failed'); }
+    finally { setSearching(false); }
+  };
+
+  const install = async (item: any) => {
+    const key = item.project_id || item.slug || item.id;
+    setInstalling(key);
+    try {
+      if (source === 'modrinth') {
+        const loaders = software?.software ? [software.software] : undefined;
+        const versions = await pluginsApi.modrinthVersions(item.project_id || item.slug, loaders);
+        const ver = versions.data?.[0];
+        if (!ver) { toast.error('No compatible version'); return; }
+        await pluginsApi.modrinthInstall(serverUuid, item.project_id || item.slug, ver.id);
+      } else {
+        await pluginsApi.spigetInstall(serverUuid, item.id);
+      }
+      toast.success('Installed! Restart to apply.');
+      pluginsApi.installed(serverUuid).then(r => setInstalled(r.data?.data || r.data || [])).catch(() => {});
+    } catch (e: any) { toast.error(e?.response?.data?.message || 'Install failed'); }
+    finally { setInstalling(null); }
+  };
+
+  const remove = async (fileName: string) => {
+    if (!confirm(`Remove ${fileName}?`)) return;
+    try { await pluginsApi.remove(serverUuid, fileName); toast.success('Removed'); pluginsApi.installed(serverUuid).then(r => setInstalled(r.data?.data || r.data || [])).catch(() => {}); }
+    catch { toast.error('Failed'); }
+  };
+
+  if (loading) return <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>;
+
+  return (
+    <div className="space-y-6">
+      {software && (
+        <div className="neo-card p-4 flex items-center gap-3">
+          <Puzzle className="w-5 h-5 text-primary" />
+          <div><p className="text-sm text-white font-medium">Detected: {software.software}</p><p className="text-xs text-gray-500">Type: {software.type}</p></div>
+        </div>
+      )}
+
+      {/* Search */}
+      <div className="neo-card p-4 space-y-3">
+        <div className="flex gap-2">
+          <button onClick={() => setSource('modrinth')} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${source === 'modrinth' ? 'bg-primary/10 text-primary' : 'text-gray-400 hover:text-white'}`}>Modrinth</button>
+          <button onClick={() => setSource('spigot')} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${source === 'spigot' ? 'bg-primary/10 text-primary' : 'text-gray-400 hover:text-white'}`}>SpigotMC</button>
+        </div>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+            <input type="text" value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search plugins..."
+              className="input-field pl-10 text-sm" onKeyDown={e => e.key === 'Enter' && search()} />
+          </div>
+          <button onClick={search} disabled={searching} className="btn-primary text-sm">{searching ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}</button>
+        </div>
+      </div>
+
+      {/* Results */}
+      {results.length > 0 && (
+        <div className="grid gap-2">
+          {results.map((r: any) => {
+            const key = r.project_id || r.slug || r.id;
+            return (
+              <div key={key} className="neo-card p-4 flex items-center gap-4">
+                {r.icon_url && <img src={r.icon_url} alt="" className="w-10 h-10 rounded-lg object-cover bg-white/5" />}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-white truncate">{r.title || r.name}</p>
+                  <p className="text-xs text-gray-500 line-clamp-1">{r.description}</p>
+                  {r.downloads !== undefined && <p className="text-xs text-gray-600 mt-0.5">{r.downloads?.toLocaleString()} downloads</p>}
+                </div>
+                <button onClick={() => install(r)} disabled={installing === key}
+                  className="btn-primary text-xs px-3 shrink-0">
+                  {installing === key ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Install'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Installed */}
+      {installed.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold text-white mb-3">Installed ({installed.length})</h3>
+          <div className="grid gap-2">
+            {installed.map((p: any) => (
+              <div key={p.name || p.file} className="neo-card p-3 flex items-center justify-between">
+                <span className="text-sm text-gray-300">{p.name || p.file}</span>
+                <button onClick={() => remove(p.file || p.name)} className="text-gray-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ──────── PLAYERS TAB ──────── */
+function PlayersTab({ serverUuid }: { serverUuid: string }) {
+  const [online, setOnline] = useState<any>(null);
+  const [whitelist, setWhitelist] = useState<string[]>([]);
+  const [banned, setBanned] = useState<any[]>([]);
+  const [ops, setOps] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isMinecraft, setIsMinecraft] = useState(false);
+  const [playerInput, setPlayerInput] = useState('');
+  const [subTab, setSubTab] = useState<'online' | 'whitelist' | 'banned' | 'ops'>('online');
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const fetchAll = useCallback(async () => {
+    if (!serverUuid) return;
+    try {
+      const detect = await playersApi.detect(serverUuid);
+      if (!detect.data?.minecraft && !detect.data?.isMinecraft) { setIsMinecraft(false); setLoading(false); return; }
+      setIsMinecraft(true);
+      const [onl, wl, bn, op] = await Promise.all([
+        playersApi.online(serverUuid).catch(() => ({ data: null })),
+        playersApi.whitelist(serverUuid).catch(() => ({ data: [] })),
+        playersApi.banned(serverUuid).catch(() => ({ data: [] })),
+        playersApi.ops(serverUuid).catch(() => ({ data: [] })),
+      ]);
+      setOnline(onl.data);
+      setWhitelist(Array.isArray(wl.data) ? wl.data.map((w: any) => typeof w === 'string' ? w : w.name) : []);
+      setBanned(Array.isArray(bn.data) ? bn.data : []);
+      setOps(Array.isArray(op.data) ? op.data : []);
+    } catch {}
+    finally { setLoading(false); }
+  }, [serverUuid]);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  const action = async (fn: () => Promise<any>, msg: string) => {
+    setActionLoading(true);
+    try { await fn(); toast.success(msg); setPlayerInput(''); fetchAll(); }
+    catch (e: any) { toast.error(e?.response?.data?.message || 'Failed'); }
+    finally { setActionLoading(false); }
+  };
+
+  if (loading) return <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>;
+  if (!isMinecraft) return <div className="neo-card p-8 text-center text-gray-500 text-sm">Player management is only available for Minecraft servers.</div>;
+
+  return (
+    <div className="space-y-4">
+      {/* Sub tabs */}
+      <div className="flex gap-1">
+        {[
+          { id: 'online' as const, label: `Online (${online?.count || 0})`, icon: Users },
+          { id: 'whitelist' as const, label: `Whitelist (${whitelist.length})`, icon: Shield },
+          { id: 'banned' as const, label: `Banned (${banned.length})`, icon: Ban },
+          { id: 'ops' as const, label: `Ops (${ops.length})`, icon: Gavel },
+        ].map(t => (
+          <button key={t.id} onClick={() => setSubTab(t.id)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${subTab === t.id ? 'bg-primary/10 text-primary' : 'text-gray-400 hover:text-white'}`}>
+            <t.icon className="w-3.5 h-3.5" />{t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Action input */}
+      {subTab !== 'online' && (
+        <div className="neo-card p-3 flex gap-2">
+          <input type="text" value={playerInput} onChange={e => setPlayerInput(e.target.value)} placeholder="Player name"
+            className="input-field text-sm flex-1" onKeyDown={e => {
+              if (e.key !== 'Enter' || !playerInput.trim()) return;
+              if (subTab === 'whitelist') action(() => playersApi.addWhitelist(serverUuid, playerInput), 'Added to whitelist');
+              if (subTab === 'banned') action(() => playersApi.ban(serverUuid, playerInput), 'Banned');
+              if (subTab === 'ops') action(() => playersApi.op(serverUuid, playerInput), 'Opped');
+            }} />
+          <button disabled={actionLoading || !playerInput.trim()} className="btn-primary text-xs"
+            onClick={() => {
+              if (subTab === 'whitelist') action(() => playersApi.addWhitelist(serverUuid, playerInput), 'Added');
+              if (subTab === 'banned') action(() => playersApi.ban(serverUuid, playerInput), 'Banned');
+              if (subTab === 'ops') action(() => playersApi.op(serverUuid, playerInput), 'Opped');
+            }}>
+            {actionLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
+          </button>
+        </div>
+      )}
+
+      {/* Lists */}
+      <div className="neo-card overflow-hidden">
+        {subTab === 'online' && (
+          online?.players?.length ? (
+            <div className="divide-y divide-white/5">
+              {online.players.map((p: string) => (
+                <div key={p} className="flex items-center justify-between px-4 py-2.5">
+                  <span className="text-sm text-gray-300">{p}</span>
+                  <button onClick={() => action(() => playersApi.kick(serverUuid, p), `Kicked ${p}`)}
+                    className="text-xs text-gray-500 hover:text-red-400 flex items-center gap-1">
+                    <UserMinus className="w-3 h-3" /> Kick
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : <div className="p-8 text-center text-gray-500 text-sm">{online ? `${online.count || 0}/${online.max || '?'} players` : 'No data'}</div>
+        )}
+
+        {subTab === 'whitelist' && (
+          whitelist.length ? (
+            <div className="divide-y divide-white/5">
+              {whitelist.map(p => (
+                <div key={p} className="flex items-center justify-between px-4 py-2.5">
+                  <span className="text-sm text-gray-300">{p}</span>
+                  <button onClick={() => action(() => playersApi.removeWhitelist(serverUuid, p), 'Removed')}
+                    className="text-xs text-gray-500 hover:text-red-400"><X className="w-3 h-3" /></button>
+                </div>
+              ))}
+            </div>
+          ) : <div className="p-8 text-center text-gray-500 text-sm">Whitelist empty</div>
+        )}
+
+        {subTab === 'banned' && (
+          banned.length ? (
+            <div className="divide-y divide-white/5">
+              {banned.map((b: any) => {
+                const name = typeof b === 'string' ? b : b.name;
+                return (
+                  <div key={name} className="flex items-center justify-between px-4 py-2.5">
+                    <div>
+                      <span className="text-sm text-gray-300">{name}</span>
+                      {b.reason && <span className="text-xs text-gray-600 ml-2">{b.reason}</span>}
+                    </div>
+                    <button onClick={() => action(() => playersApi.unban(serverUuid, name), 'Unbanned')}
+                      className="text-xs text-gray-500 hover:text-green-400">Unban</button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : <div className="p-8 text-center text-gray-500 text-sm">No banned players</div>
+        )}
+
+        {subTab === 'ops' && (
+          ops.length ? (
+            <div className="divide-y divide-white/5">
+              {ops.map((o: any) => {
+                const name = typeof o === 'string' ? o : o.name;
+                return (
+                  <div key={name} className="flex items-center justify-between px-4 py-2.5">
+                    <span className="text-sm text-gray-300">{name}</span>
+                    <button onClick={() => action(() => playersApi.deop(serverUuid, name), 'De-opped')}
+                      className="text-xs text-gray-500 hover:text-orange-400">Remove OP</button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : <div className="p-8 text-center text-gray-500 text-sm">No operators</div>
+        )}
+      </div>
+    </div>
+  );
 }

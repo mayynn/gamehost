@@ -1,119 +1,103 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { Wallet, Plus, History, Loader2, AlertCircle } from 'lucide-react';
-import { billingApi } from '@/lib/api';
-import toast from 'react-hot-toast';
 
-function loadRazorpayScript(): Promise<boolean> {
-    return new Promise((resolve) => {
-        if ((window as any).Razorpay) return resolve(true);
-        const script = document.createElement('script');
-        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-        script.onload = () => resolve(true);
-        script.onerror = () => resolve(false);
-        document.body.appendChild(script);
-    });
-}
+import { useEffect, useState } from 'react';
+import { billingApi } from '@/lib/api';
+import { motion } from 'framer-motion';
+import { Wallet, ArrowUpRight, ArrowDownRight, Clock, Loader2, IndianRupee, TrendingUp, CreditCard } from 'lucide-react';
+import { StaggerContainer, FadeUpItem } from '@/components/ui/Animations';
+import Link from 'next/link';
 
 export default function BalancePage() {
-    const [balance, setBalance] = useState(0);
-    const [amount, setAmount] = useState('');
-    const [payments, setPayments] = useState<any[]>([]);
-    const [gateways, setGateways] = useState<any>({});
-    const [loading, setLoading] = useState(true);
-    const [processing, setProcessing] = useState(false);
+  const [balance, setBalance] = useState<number>(0);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-    const refreshData = () => {
-        billingApi.balance().then((r) => setBalance(r.data?.balance ?? r.data ?? 0)).catch(() => { });
-        billingApi.payments().then((r) => setPayments((r.data || []).filter((p: any) => p.status === 'COMPLETED'))).catch(() => { });
-    };
+  useEffect(() => {
+    Promise.all([
+      billingApi.balance().then(r => setBalance(r.data?.amount ?? r.data?.balance ?? r.data ?? 0)),
+      billingApi.transactions().then(r => setTransactions(r.data?.data || r.data || [])).catch(() => {}),
+    ]).finally(() => setLoading(false));
+  }, []);
 
-    useEffect(() => {
-        Promise.all([
-            billingApi.balance().then((r) => setBalance(r.data?.balance ?? r.data ?? 0)).catch(() => { }),
-            billingApi.payments().then((r) => setPayments((r.data || []).filter((p: any) => p.status === 'COMPLETED'))).catch(() => { }),
-            billingApi.gateways().then((r) => setGateways(r.data || {})).catch(() => { }),
-        ]).finally(() => setLoading(false));
-    }, []);
+  if (loading) return <div className="flex items-center justify-center py-20"><Loader2 className="w-7 h-7 text-primary animate-spin" /></div>;
 
-    const addFunds = async () => {
-        const val = parseFloat(amount);
-        if (!val || val < 10) return toast.error('Minimum ₹10');
-        if (!gateways.razorpay) return toast.error('No payment gateway configured. Contact admin.');
-        setProcessing(true);
-        try {
-            const loaded = await loadRazorpayScript();
-            if (!loaded) return toast.error('Failed to load payment SDK');
-            const { data } = await billingApi.razorpayCreate(val);
-            const options = {
-                key: data.keyId || data.key_id,
-                amount: data.amount,
-                currency: data.currency || 'INR',
-                order_id: data.orderId || data.order_id,
-                name: 'GameHost',
-                description: `Add ₹${val} to balance`,
-                handler: async (response: any) => {
-                    try {
-                        await billingApi.razorpayVerify({
-                            razorpay_order_id: response.razorpay_order_id,
-                            razorpay_payment_id: response.razorpay_payment_id,
-                            razorpay_signature: response.razorpay_signature,
-                        });
-                        toast.success('Payment successful!');
-                        setAmount('');
-                        refreshData();
-                    } catch { toast.error('Payment verification failed'); }
-                },
-                theme: { color: '#00d4ff' },
-            };
-            const rzp = new (window as any).Razorpay(options);
-            rzp.on('payment.failed', () => toast.error('Payment failed'));
-            rzp.open();
-        } catch { toast.error('Failed to create payment'); }
-        finally { setProcessing(false); }
-    };
+  const income = transactions.filter(t => t.amount > 0).reduce((a, t) => a + t.amount, 0);
+  const spent = transactions.filter(t => t.amount < 0).reduce((a, t) => a + Math.abs(t.amount), 0);
 
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center py-20">
-                <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            </div>
-        );
-    }
-
-    return (
-        <div>
-            <h1 className="text-2xl font-display font-bold mb-8">Balance</h1>
-            <div className="glass-card p-8 text-center mb-8">
-                <Wallet className="w-16 h-16 text-primary mx-auto mb-4" />
-                <p className="text-sm text-gray-400">Available Balance</p>
-                <p className="text-5xl font-bold gradient-text mb-6">₹{typeof balance === 'number' ? balance.toFixed(2) : balance}</p>
-                <div className="flex gap-2 max-w-sm mx-auto">
-                    <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)}
-                        placeholder="Amount (₹)" className="input-field flex-1" min="10"
-                        onKeyDown={(e) => e.key === 'Enter' && addFunds()} />
-                    <button onClick={addFunds} disabled={processing} className="btn-primary flex items-center gap-2">
-                        {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Add
-                    </button>
-                </div>
-                {!gateways.razorpay && (
-                    <p className="flex items-center justify-center gap-1.5 text-xs text-orange-400 mt-3">
-                        <AlertCircle className="w-3.5 h-3.5" /> No payment gateway configured
-                    </p>
-                )}
-            </div>
-            <div className="glass-card p-6">
-                <h3 className="font-semibold flex items-center gap-2 mb-4"><History className="w-5 h-5" /> Recent Transactions</h3>
-                <div className="space-y-2">
-                    {payments.slice(0, 10).map((p: any) => (
-                        <div key={p.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5 text-sm">
-                            <span>₹{p.amount} via {p.gateway}</span>
-                            <span className="text-gray-500">{new Date(p.createdAt).toLocaleDateString()}</span>
-                        </div>
-                    ))}
-                    {payments.length === 0 && <p className="text-gray-500 text-center py-4">No transactions</p>}
-                </div>
-            </div>
+  return (
+    <StaggerContainer className="space-y-6">
+      <FadeUpItem>
+        <div className="page-header">
+          <h1 className="text-2xl font-display font-bold text-white">Balance</h1>
+          <p className="text-sm text-gray-500 mt-1">Your wallet overview and transactions</p>
         </div>
-    );
+      </FadeUpItem>
+
+      {/* Balance Cards */}
+      <div className="grid sm:grid-cols-3 gap-4">
+        <FadeUpItem>
+          <div className="stat-card stat-card-green p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.2)' }}>
+                <Wallet className="w-5 h-5 text-emerald-400" />
+              </div>
+              <Link href="/dashboard/billing" className="text-[11px] text-primary hover:text-primary/80 font-medium transition-colors">+ Add Funds</Link>
+            </div>
+            <p className="text-[11px] text-gray-500 uppercase tracking-wider font-medium">Current Balance</p>
+            <p className="text-2xl font-display font-bold text-white mt-1 flex items-center gap-0.5"><IndianRupee className="w-5 h-5" />{balance.toFixed(2)}</p>
+          </div>
+        </FadeUpItem>
+        <FadeUpItem>
+          <div className="stat-card stat-card-cyan p-5">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style={{ background: 'rgba(0,212,255,0.12)', border: '1px solid rgba(0,212,255,0.2)' }}>
+              <TrendingUp className="w-5 h-5 text-primary" />
+            </div>
+            <p className="text-[11px] text-gray-500 uppercase tracking-wider font-medium">Total Income</p>
+            <p className="text-2xl font-display font-bold text-emerald-400 mt-1">₹{income.toFixed(2)}</p>
+          </div>
+        </FadeUpItem>
+        <FadeUpItem>
+          <div className="stat-card stat-card-accent p-5">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style={{ background: 'rgba(255,77,106,0.12)', border: '1px solid rgba(255,77,106,0.2)' }}>
+              <CreditCard className="w-5 h-5 text-accent" />
+            </div>
+            <p className="text-[11px] text-gray-500 uppercase tracking-wider font-medium">Total Spent</p>
+            <p className="text-2xl font-display font-bold text-accent mt-1">₹{spent.toFixed(2)}</p>
+          </div>
+        </FadeUpItem>
+      </div>
+
+      {/* Transactions */}
+      <FadeUpItem>
+        <div className="neo-card overflow-hidden">
+          <div className="p-5 flex items-center gap-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+            <Clock className="w-4 h-4 text-gray-500" />
+            <h2 className="text-base font-semibold text-white">Transaction History</h2>
+            <span className="text-[11px] text-gray-600 ml-auto">{transactions.length} transactions</span>
+          </div>
+          {transactions.length === 0 ? (
+            <div className="p-10 text-center text-gray-600 text-sm">No transactions yet</div>
+          ) : (
+            <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+              {transactions.map((t: any) => (
+                <div key={t.id} className="table-row">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${t.amount > 0 ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}>
+                    {t.amount > 0 ? <ArrowUpRight className="w-4 h-4 text-emerald-400" /> : <ArrowDownRight className="w-4 h-4 text-red-400" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-white font-medium">{t.type?.replace(/_/g, ' ') || t.description || 'Transaction'}</p>
+                    {t.description && t.type && <p className="text-[11px] text-gray-600 truncate">{t.description}</p>}
+                    <p className="text-[11px] text-gray-600">{new Date(t.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
+                  <span className={`text-sm font-bold ${t.amount > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {t.amount > 0 ? '+' : ''}₹{Math.abs(t.amount).toFixed(2)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </FadeUpItem>
+    </StaggerContainer>
+  );
 }

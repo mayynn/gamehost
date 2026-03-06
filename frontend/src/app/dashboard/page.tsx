@@ -1,105 +1,212 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Server, Wallet, Gift, Activity, ArrowUpRight, Loader2 } from 'lucide-react';
-import { authApi, serversApi, billingApi, creditsApi } from '@/lib/api';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useAuth } from '@/contexts/AuthContext';
+import { serversApi, billingApi, creditsApi } from '@/lib/api';
+import { motion } from 'framer-motion';
+import { StaggerContainer, FadeUpItem, Skeleton } from '@/components/ui/Animations';
+import { Server, Wallet, Coins, Activity, Plus, ArrowRight, Clock, Cpu, HardDrive, MemoryStick, Zap, TrendingUp, Rocket } from 'lucide-react';
+
+const ResourceBar = ({ value, max, color }: { value: number; max: number; color: string }) => {
+  const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
+  return (
+    <div className="progress-bar">
+      <motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.8, ease: 'easeOut' }}
+        className="progress-bar-fill" style={{ background: `linear-gradient(90deg, ${color}, ${color}99)`, color }} />
+    </div>
+  );
+};
 
 export default function DashboardPage() {
-    const [user, setUser] = useState<any>(null);
-    const [servers, setServers] = useState<any[]>([]);
-    const [balance, setBalance] = useState(0);
-    const [credits, setCredits] = useState(0);
-    const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const [servers, setServers] = useState<any[]>([]);
+  const [balance, setBalance] = useState(0);
+  const [credits, setCredits] = useState(0);
+  const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        Promise.all([
-            authApi.getMe().then((r) => setUser(r.data.user)).catch(() => { }),
-            serversApi.list().then((r) => setServers(r.data || [])).catch(() => { }),
-            billingApi.balance().then((r) => setBalance(r.data?.balance ?? r.data ?? 0)).catch(() => { }),
-            creditsApi.get().then((r) => setCredits(r.data || 0)).catch(() => { }),
-        ]).finally(() => setLoading(false));
-    }, []);
+  useEffect(() => {
+    Promise.all([
+      serversApi.list().then(r => setServers(r.data)).catch(() => {}),
+      billingApi.balance().then(r => setBalance(r.data.balance ?? r.data.amount ?? 0)).catch(() => {}),
+      creditsApi.get().then(r => setCredits(r.data.amount ?? 0)).catch(() => {}),
+    ]).finally(() => setLoading(false));
+  }, []);
 
-    const stats = [
-        { label: 'Active Servers', value: servers.filter((s) => s.status === 'ACTIVE').length, icon: Server, color: 'text-green-400 bg-green-500/10' },
-        { label: 'Total Servers', value: servers.length, icon: Activity, color: 'text-blue-400 bg-blue-500/10' },
-        { label: 'Balance', value: `₹${typeof balance === 'number' ? balance.toFixed(2) : balance}`, icon: Wallet, color: 'text-primary bg-primary/10' },
-        { label: 'Credits', value: credits, icon: Gift, color: 'text-accent bg-accent/10' },
-    ];
+  const activeServers = servers.filter(s => s.status === 'ACTIVE').length;
 
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center py-20">
-                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+  const statCards = [
+    { label: 'Active Servers', value: activeServers, sub: `of ${servers.length} total`, icon: <Server className="w-5 h-5" />, color: '#00d4ff', cardClass: 'stat-card-cyan' },
+    { label: 'Server Uptime', value: servers.length > 0 ? `${Math.round((activeServers / servers.length) * 100)}%` : '—', sub: 'Running status', icon: <Activity className="w-5 h-5" />, color: '#7c3aed', cardClass: 'stat-card-purple' },
+    { label: 'Balance', value: `₹${balance.toFixed(2)}`, sub: 'Available funds', icon: <Wallet className="w-5 h-5" />, color: '#10b981', cardClass: 'stat-card-green' },
+    { label: 'Credits', value: credits, sub: 'Earned rewards', icon: <Coins className="w-5 h-5" />, color: '#ff4d6a', cardClass: 'stat-card-accent' },
+  ];
+
+  return (
+    <div className="space-y-8">
+      {/* Hero Header */}
+      <div className="relative overflow-hidden rounded-2xl p-6 md:p-8" style={{ background: 'linear-gradient(135deg, rgba(0,212,255,0.06) 0%, rgba(124,58,237,0.04) 50%, rgba(255,77,106,0.03) 100%)', border: '1px solid rgba(255,255,255,0.05)' }}>
+        <div className="absolute inset-0 opacity-20" style={{ background: 'radial-gradient(circle at 20% 50%, rgba(0,212,255,0.1), transparent 50%)' }} />
+        <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse-soft" />
+              <span className="text-xs text-gray-400 font-medium uppercase tracking-wider">Control Panel</span>
             </div>
-        );
-    }
-
-    return (
-        <div>
-            <div className="mb-8">
-                <h1 className="text-2xl font-display font-bold">Welcome back, <span className="gradient-text">{user?.name || 'User'}</span></h1>
-                <p className="text-gray-400 mt-1">Manage your game servers and billing from here.</p>
-            </div>
-
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                {stats.map((stat) => (
-                    <div key={stat.label} className="glass-card p-5">
-                        <div className="flex items-center justify-between mb-3">
-                            <span className="text-sm text-gray-400">{stat.label}</span>
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${stat.color}`}>
-                                <stat.icon className="w-5 h-5" />
-                            </div>
-                        </div>
-                        <p className="text-2xl font-bold">{stat.value}</p>
-                    </div>
-                ))}
-            </div>
-
-            {/* Servers List */}
-            <div className="glass-card p-6">
-                <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-lg font-semibold">Your Servers</h2>
-                    <Link href="/dashboard/plans" className="text-primary text-sm flex items-center gap-1 hover:underline">
-                        Create Server <ArrowUpRight className="w-4 h-4" />
-                    </Link>
-                </div>
-
-                {servers.length === 0 ? (
-                    <div className="text-center py-12 text-gray-500">
-                        <Server className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                        <p className="font-medium">No servers yet</p>
-                        <p className="text-sm mt-1">Create your first server from the Plans page</p>
-                    </div>
-                ) : (
-                    <div className="space-y-3">
-                        {servers.map((server) => (
-                            <Link
-                                key={server.id}
-                                href={`/dashboard/servers/${server.id}`}
-                                className="flex items-center gap-4 p-4 rounded-xl bg-white/5 hover:bg-white/10 transition-all group"
-                            >
-                                <div className={`w-3 h-3 rounded-full ${server.status === 'ACTIVE' ? 'bg-green-400 shadow-lg shadow-green-400/30' :
-                                        server.status === 'SUSPENDED' ? 'bg-orange-400' : 'bg-red-400'
-                                    }`} />
-                                <div className="flex-1 min-w-0">
-                                    <p className="font-medium truncate">{server.name}</p>
-                                    <p className="text-xs text-gray-500">{server.ram >= 1024 ? `${(server.ram / 1024).toFixed(1)} GB` : `${server.ram} MB`} RAM · {server.cpu}% CPU · {server.disk >= 1024 ? `${(server.disk / 1024).toFixed(1)} GB` : `${server.disk} MB`} Disk</p>
-                                </div>
-                                <span className={
-                                    server.status === 'ACTIVE' ? 'status-active' :
-                                        server.status === 'SUSPENDED' ? 'status-suspended' : 'status-expired'
-                                }>
-                                    {server.status}
-                                </span>
-                                <ArrowUpRight className="w-4 h-4 text-gray-500 group-hover:text-primary transition-colors" />
-                            </Link>
-                        ))}
-                    </div>
-                )}
-            </div>
+            <h1 className="text-2xl md:text-3xl font-display font-bold text-white">
+              Welcome back, <span className="gradient-text">{user?.name?.split(' ')[0] || 'User'}</span>
+            </h1>
+            <p className="text-gray-400 text-sm mt-1.5">Monitor your infrastructure and manage deployments.</p>
+          </div>
+          <Link href="/dashboard/servers/create" className="btn-primary flex items-center gap-2 text-sm w-fit">
+            <Rocket className="w-4 h-4" /> Deploy Server
+          </Link>
         </div>
-    );
+      </div>
+
+      {/* Stats Grid */}
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-32 rounded-2xl" />)}
+        </div>
+      ) : (
+        <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {statCards.map((card, i) => (
+            <FadeUpItem key={i}>
+              <div className={`stat-card ${card.cardClass}`}>
+                <div className="relative flex items-start justify-between">
+                  <div>
+                    <p className="text-[11px] text-gray-500 uppercase tracking-wider font-medium mb-2">{card.label}</p>
+                    <p className="text-2xl font-display font-bold text-white">{card.value}</p>
+                    <p className="text-[11px] text-gray-600 mt-1">{card.sub}</p>
+                  </div>
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: `${card.color}12`, border: `1px solid ${card.color}20` }}>
+                    <span style={{ color: card.color }}>{card.icon}</span>
+                  </div>
+                </div>
+              </div>
+            </FadeUpItem>
+          ))}
+        </StaggerContainer>
+      )}
+
+      {/* Quick Actions + Server List */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+
+        {/* Server List - takes 2 cols */}
+        <div className="xl:col-span-2">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-display font-semibold text-white flex items-center gap-2">
+              <Server className="w-4 h-4 text-primary" /> Your Servers
+            </h2>
+            <Link href="/dashboard/servers" className="text-xs text-gray-500 hover:text-primary flex items-center gap-1 transition-colors font-medium">
+              View All <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+
+          {loading ? (
+            <div className="space-y-3">{[1, 2, 3].map(i => <Skeleton key={i} className="h-20 rounded-2xl" />)}</div>
+          ) : servers.length === 0 ? (
+            <div className="neo-card text-center py-16">
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.12)' }}>
+                <Server className="w-7 h-7 text-primary/50" />
+              </div>
+              <h3 className="text-lg font-semibold text-white mb-2">No Servers Yet</h3>
+              <p className="text-gray-500 mb-6 text-sm">Deploy your first game server in seconds.</p>
+              <Link href="/dashboard/servers/create" className="btn-primary inline-flex items-center gap-2 text-sm"><Plus className="w-4 h-4" /> Create Server</Link>
+            </div>
+          ) : (
+            <StaggerContainer className="space-y-2.5">
+              {servers.slice(0, 5).map((s: any) => {
+                const daysLeft = s.expiresAt ? Math.max(0, Math.ceil((new Date(s.expiresAt).getTime() - Date.now()) / 86400000)) : null;
+                return (
+                  <FadeUpItem key={s.id}>
+                    <Link href={`/dashboard/servers/${s.id}`} className="block neo-card-interactive p-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-4 min-w-0">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                            s.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-400' :
+                            s.status === 'SUSPENDED' ? 'bg-orange-500/10 text-orange-400' :
+                            'bg-red-500/10 text-red-400'
+                          }`}>
+                            <Server className="w-[18px] h-[18px]" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <h3 className="text-sm font-semibold text-white truncate">{s.name}</h3>
+                            <div className="flex items-center gap-3 text-[11px] text-gray-600 mt-1">
+                              <span className="flex items-center gap-1"><MemoryStick className="w-3 h-3" />{s.ram >= 1024 ? `${(s.ram/1024).toFixed(1)}GB` : `${s.ram}MB`}</span>
+                              <span className="flex items-center gap-1"><Cpu className="w-3 h-3" />{s.cpu}%</span>
+                              <span className="flex items-center gap-1"><HardDrive className="w-3 h-3" />{s.disk >= 1024 ? `${(s.disk/1024).toFixed(1)}GB` : `${s.disk}MB`}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                          {daysLeft !== null && (
+                            <span className={`text-[11px] hidden sm:flex items-center gap-1 ${daysLeft <= 3 ? 'text-red-400' : daysLeft <= 7 ? 'text-orange-400' : 'text-gray-600'}`}>
+                              <Clock className="w-3 h-3" />{daysLeft}d
+                            </span>
+                          )}
+                          <span className={`status-${s.status?.toLowerCase() || 'active'}`}>{s.status}</span>
+                        </div>
+                      </div>
+                    </Link>
+                  </FadeUpItem>
+                );
+              })}
+            </StaggerContainer>
+          )}
+        </div>
+
+        {/* Quick Actions sidebar */}
+        <div className="space-y-4">
+          <h2 className="text-base font-display font-semibold text-white flex items-center gap-2">
+            <Zap className="w-4 h-4 text-accent" /> Quick Actions
+          </h2>
+          <div className="space-y-2.5">
+            {[
+              { label: 'Deploy New Server', desc: 'Launch a game server', href: '/dashboard/servers/create', icon: <Rocket className="w-4 h-4" />, color: '#00d4ff' },
+              { label: 'Add Balance', desc: 'Top up your wallet', href: '/dashboard/billing', icon: <Wallet className="w-4 h-4" />, color: '#10b981' },
+              { label: 'Earn Credits', desc: 'Watch ads for credits', href: '/dashboard/credits', icon: <Coins className="w-4 h-4" />, color: '#ff4d6a' },
+              { label: 'Browse Plans', desc: 'View available plans', href: '/dashboard/plans', icon: <TrendingUp className="w-4 h-4" />, color: '#7c3aed' },
+            ].map(a => (
+              <Link key={a.href} href={a.href} className="neo-card-interactive flex items-center gap-3.5 p-4 group">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all duration-300 group-hover:scale-110" style={{ background: `${a.color}12`, border: `1px solid ${a.color}15`, color: a.color }}>
+                  {a.icon}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-white">{a.label}</div>
+                  <div className="text-[11px] text-gray-600">{a.desc}</div>
+                </div>
+                <ArrowRight className="w-3.5 h-3.5 text-gray-600 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+              </Link>
+            ))}
+          </div>
+
+          {/* Resource Overview */}
+          {!loading && servers.length > 0 && (
+            <div className="neo-card">
+              <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+                <Activity className="w-4 h-4 text-primary" /> Total Resources
+              </h3>
+              <div className="space-y-3">
+                {[
+                  { label: 'RAM', val: servers.reduce((a: number, s: any) => a + (s.ram || 0), 0), unit: 'MB', color: '#00d4ff', max: servers.reduce((a: number, s: any) => a + (s.ram || 0), 0) * 1.5 },
+                  { label: 'CPU', val: servers.reduce((a: number, s: any) => a + (s.cpu || 0), 0), unit: '%', color: '#7c3aed', max: servers.reduce((a: number, s: any) => a + (s.cpu || 0), 0) * 1.5 },
+                  { label: 'Disk', val: servers.reduce((a: number, s: any) => a + (s.disk || 0), 0), unit: 'MB', color: '#10b981', max: servers.reduce((a: number, s: any) => a + (s.disk || 0), 0) * 1.5 },
+                ].map(r => (
+                  <div key={r.label}>
+                    <div className="flex items-center justify-between text-[11px] mb-1.5">
+                      <span className="text-gray-400 font-medium">{r.label}</span>
+                      <span className="text-gray-500">{r.val >= 1024 ? `${(r.val/1024).toFixed(1)} GB` : `${r.val} ${r.unit}`}</span>
+                    </div>
+                    <ResourceBar value={r.val} max={r.max} color={r.color} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }

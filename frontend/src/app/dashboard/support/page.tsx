@@ -1,73 +1,104 @@
 'use client';
-import { MessageSquare, Mail, Loader2 } from 'lucide-react';
+
+import { useEffect, useState } from 'react';
 import { settingsApi } from '@/lib/api';
-import { useState, useEffect } from 'react';
+import { MessageCircle, Mail, HelpCircle, ExternalLink, ChevronDown, Headphones, BookOpen } from 'lucide-react';
+import { StaggerContainer, FadeUpItem } from '@/components/ui/Animations';
+import { motion, AnimatePresence } from 'framer-motion';
+
+const FAQ = [
+  { q: 'How do I create a server?', a: 'Go to Plans, choose a plan, and click Deploy. Your server will be ready in seconds.' },
+  { q: 'How do I add balance?', a: 'Navigate to Billing, select an amount and payment method, and complete the payment.' },
+  { q: 'What happens when my server expires?', a: 'Your server will be suspended. Renew it from the server dashboard to restore access.' },
+  { q: 'Can I upgrade my plan?', a: 'Delete your current server and create a new one with a higher plan. Your files will not transfer.' },
+  { q: 'How do credits work?', a: 'Watch ads on the Credits page to earn free credits that can be used for services.' },
+  { q: 'My server is not starting. What do I do?', a: 'Check the console for errors. Try reinstalling the server or contact support.' },
+];
 
 export default function SupportPage() {
-    const [discordUrl, setDiscordUrl] = useState('');
-    const [supportEmail, setSupportEmail] = useState('');
-    const [loading, setLoading] = useState(true);
+  const [settings, setSettings] = useState<any>({});
+  const [openFaq, setOpenFaq] = useState<number | null>(null);
 
-    useEffect(() => {
-        settingsApi.public().then((r) => {
-            const settings = r.data || {};
-            setDiscordUrl(settings.DISCORD_INVITE_URL || '');
-            setSupportEmail(settings.SUPPORT_EMAIL || '');
-        }).catch(() => { }).finally(() => setLoading(false));
-    }, []);
+  useEffect(() => {
+    settingsApi.public().then(r => setSettings(r.data || {})).catch(() => {});
+  }, []);
 
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center py-20">
-                <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            </div>
-        );
-    }
-
-    return (
-        <div>
-            <h1 className="text-2xl font-display font-bold mb-8">Support</h1>
-            <div className="grid md:grid-cols-2 gap-6 max-w-4xl">
-                <div className="glass-card-hover p-8 text-center">
-                    <MessageSquare className="w-12 h-12 text-primary mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold mb-2">Discord Community</h3>
-                    <p className="text-sm text-gray-400 mb-4">Join our Discord server for instant help and community support.</p>
-                    <a href={discordUrl || '#'} target="_blank" rel="noopener noreferrer"
-                        className={`btn-primary inline-block ${!discordUrl ? 'opacity-50 pointer-events-none' : ''}`}>
-                        {discordUrl ? 'Join Discord' : 'Discord not configured'}
-                    </a>
-                </div>
-                <div className="glass-card-hover p-8 text-center">
-                    <Mail className="w-12 h-12 text-accent mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold mb-2">Email Support</h3>
-                    <p className="text-sm text-gray-400 mb-4">Send us an email and we&apos;ll get back to you within 24 hours.</p>
-                    <a href={supportEmail ? `mailto:${supportEmail}` : '#'}
-                        className={`btn-secondary inline-block ${!supportEmail ? 'opacity-50 pointer-events-none' : ''}`}>
-                        {supportEmail ? 'Email Us' : 'Email not configured'}
-                    </a>
-                </div>
-            </div>
-            <div className="glass-card p-6 mt-8 max-w-4xl">
-                <h3 className="font-semibold mb-4">Frequently Asked Questions</h3>
-                <div className="space-y-4">
-                    {[
-                        { q: 'How do I create a server?', a: 'Go to Plans, select a plan, choose your game, and click Deploy. Your server will be ready in seconds.' },
-                        { q: 'How do free credits work?', a: 'Go to Earn Credits, watch a short ad, and claim credits. Credits keep your free plan server running — if credits run out, the server will be suspended.' },
-                        { q: 'What payment methods are accepted?', a: 'We accept Razorpay, Cashfree, UPI, and account balance. Check the Billing page for available gateways.' },
-                        { q: 'My server is suspended, what do I do?', a: 'Server suspension is due to expired payment. Go to Billing and complete the renewal payment.' },
-                    ].map((faq, i) => (
-                        <details key={i} className="group">
-                            <summary className="p-4 rounded-lg bg-white/5 cursor-pointer text-sm font-medium hover:bg-white/10 transition-colors list-none flex items-center justify-between">
-                                {faq.q}
-                                <span className="text-gray-600 group-open:rotate-180 transition-transform duration-200 ml-2">▾</span>
-                            </summary>
-                            <div className="overflow-hidden">
-                                <p className="text-sm text-gray-400 px-4 pb-4 pt-2">{faq.a}</p>
-                            </div>
-                        </details>
-                    ))}
-                </div>
-            </div>
+  return (
+    <StaggerContainer className="space-y-6 max-w-3xl">
+      <FadeUpItem>
+        <div className="page-header">
+          <h1 className="text-2xl font-display font-bold text-white flex items-center gap-2.5">
+            <Headphones className="w-6 h-6 text-primary" /> Support
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">Need help? We&apos;re here for you.</p>
         </div>
-    );
+      </FadeUpItem>
+
+      {/* Contact Cards */}
+      <div className="grid sm:grid-cols-2 gap-4">
+        <FadeUpItem>
+          <a href={settings.DISCORD_INVITE_URL || '#'} target="_blank" rel="noopener noreferrer"
+            className="neo-card group p-5 flex items-center gap-4 cursor-pointer hover:border-[#5865F2]/30 transition-all duration-300">
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: 'rgba(88,101,242,0.1)', border: '1px solid rgba(88,101,242,0.2)' }}>
+              <MessageCircle className="w-5 h-5 text-[#5865F2]" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-white text-sm">Discord Server</p>
+              <p className="text-[12px] text-gray-500">Chat with us in real-time</p>
+            </div>
+            <ExternalLink className="w-4 h-4 text-gray-600 group-hover:text-[#5865F2] transition-colors" />
+          </a>
+        </FadeUpItem>
+
+        <FadeUpItem>
+          <a href={`mailto:${settings.SUPPORT_EMAIL || 'support@example.com'}`}
+            className="neo-card group p-5 flex items-center gap-4 cursor-pointer hover:border-primary/30 transition-all duration-300">
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.2)' }}>
+              <Mail className="w-5 h-5 text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-white text-sm">Email Support</p>
+              <p className="text-[12px] text-gray-500 truncate">{settings.SUPPORT_EMAIL || 'support@example.com'}</p>
+            </div>
+            <ExternalLink className="w-4 h-4 text-gray-600 group-hover:text-primary transition-colors" />
+          </a>
+        </FadeUpItem>
+      </div>
+
+      {/* FAQ */}
+      <FadeUpItem>
+        <div className="neo-card overflow-hidden">
+          <div className="p-5 flex items-center gap-2.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+            <BookOpen className="w-4 h-4 text-gray-500" />
+            <h2 className="text-sm font-semibold text-white">Frequently Asked Questions</h2>
+            <span className="text-[11px] text-gray-600 ml-auto">{FAQ.length} questions</span>
+          </div>
+          <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+            {FAQ.map((f, i) => (
+              <button key={i} onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                className="w-full text-left px-5 py-3.5 hover:bg-white/[0.02] transition-colors">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-medium text-white">{f.q}</p>
+                  <ChevronDown className={`w-4 h-4 text-gray-600 transition-transform shrink-0 ${openFaq === i ? 'rotate-180 text-primary' : ''}`} />
+                </div>
+                <AnimatePresence>
+                  {openFaq === i && (
+                    <motion.p
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="text-sm text-gray-400 mt-2 overflow-hidden"
+                    >
+                      {f.a}
+                    </motion.p>
+                  )}
+                </AnimatePresence>
+              </button>
+            ))}
+          </div>
+        </div>
+      </FadeUpItem>
+    </StaggerContainer>
+  );
 }

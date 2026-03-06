@@ -1,293 +1,321 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { vpsApi, billingApi } from '@/lib/api';
-import { Server, Plus, Power, Square, Trash2, RefreshCw, Clock, Wallet, RotateCcw } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { vpsApi } from '@/lib/api';
+import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
+import {
+  Server, Plus, Loader2, MemoryStick, Cpu, HardDrive, Globe, Play, Square,
+  RotateCcw, Trash2, RefreshCw, Clock, X, AlertTriangle, ChevronRight, Copy, Rocket, Monitor
+} from 'lucide-react';
+import { StaggerContainer, FadeUpItem } from '@/components/ui/Animations';
+
+const STATUS_CFG: Record<string, { bg: string; text: string; border: string; dot: string }> = {
+  ACTIVE: { bg: 'rgba(16,185,129,0.08)', text: 'text-emerald-400', border: 'rgba(16,185,129,0.2)', dot: 'bg-emerald-400' },
+  PROVISIONING: { bg: 'rgba(234,179,8,0.08)', text: 'text-yellow-400', border: 'rgba(234,179,8,0.2)', dot: 'bg-yellow-400 animate-pulse' },
+  SUSPENDED: { bg: 'rgba(239,68,68,0.08)', text: 'text-red-400', border: 'rgba(239,68,68,0.2)', dot: 'bg-red-400' },
+  TERMINATED: { bg: 'rgba(107,114,128,0.08)', text: 'text-gray-400', border: 'rgba(107,114,128,0.2)', dot: 'bg-gray-500' },
+};
 
 export default function VpsPage() {
-    const [vpsList, setVpsList] = useState<any[]>([]);
-    const [plans, setPlans] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [showCreate, setShowCreate] = useState(false);
-    const [selectedPlan, setSelectedPlan] = useState<any>(null);
-    const [hostname, setHostname] = useState('');
-    const [os, setOs] = useState('');
-    const [osList, setOsList] = useState<any[]>([]);
-    const [osLoading, setOsLoading] = useState(false);
-    const [balance, setBalance] = useState(0);
-    const [creating, setCreating] = useState(false);
-    const [renewingId, setRenewingId] = useState<string | null>(null);
+  const [instances, setInstances] = useState<any[]>([]);
+  const [plans, setPlans] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<any>(null);
+  const [osOptions, setOsOptions] = useState<any[]>([]);
+  const [selectedOs, setSelectedOs] = useState('');
+  const [hostname, setHostname] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [detail, setDetail] = useState<any>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [terminateConfirm, setTerminateConfirm] = useState<string | null>(null);
+  const [reinstalling, setReinstalling] = useState<string | null>(null);
+  const [reinstallOs, setReinstallOs] = useState('');
 
-    useEffect(() => {
-        Promise.all([
-            vpsApi.list().then((r) => setVpsList(r.data || [])),
-            vpsApi.plans().then((r) => setPlans(r.data || [])),
-            billingApi.balance().then((r) => setBalance(r.data?.balance ?? r.data ?? 0)),
-        ]).finally(() => setLoading(false));
-    }, []);
+  const fetchInstances = useCallback(async () => {
+    try { const r = await vpsApi.list(); setInstances(r.data || []); }
+    catch {} finally { setLoading(false); }
+  }, []);
 
-    // Fetch available OS when plan is selected
-    useEffect(() => {
-        if (!selectedPlan) {
-            setOsList([]);
-            setOs('');
-            return;
-        }
-        setOsLoading(true);
-        setOs('');
-        vpsApi.planOs(selectedPlan.id)
-            .then((r) => {
-                const list = r.data || [];
-                setOsList(list);
-                if (list.length > 0) setOs(list[0].id);
-            })
-            .catch(() => {
-                setOsList([]);
-                toast.error('Failed to load OS options for this plan');
-            })
-            .finally(() => setOsLoading(false));
-    }, [selectedPlan?.id]);
+  useEffect(() => { fetchInstances(); }, [fetchInstances]);
 
-    const refreshList = () => {
-        vpsApi.list().then((r) => setVpsList(r.data || []));
-        billingApi.balance().then((r) => setBalance(r.data?.balance ?? r.data ?? 0));
-    };
+  const openCreate = async () => {
+    setShowCreate(true);
+    try { const r = await vpsApi.plans(); setPlans(r.data || []); }
+    catch { toast.error('Failed to load VPS plans'); }
+  };
 
-    const createVps = async () => {
-        if (!selectedPlan) return toast.error('Select a plan');
-        if (!os) return toast.error('Select an operating system');
-        if (!hostname.trim()) return toast.error('Enter a hostname');
-        if (balance < selectedPlan.price) return toast.error(`Insufficient balance. Need ₹${selectedPlan.price}, have ₹${balance.toFixed(2)}`);
-        setCreating(true);
-        try {
-            await vpsApi.create({ planId: selectedPlan.id, os, hostname: hostname.trim() });
-            toast.success('VPS provisioning started! Balance deducted.');
-            setShowCreate(false);
-            setHostname('');
-            setSelectedPlan(null);
-            refreshList();
-        } catch (e: any) {
-            toast.error(e?.response?.data?.message || 'Failed to create VPS');
-        } finally { setCreating(false); }
-    };
+  const pickPlan = async (plan: any) => {
+    setSelectedPlan(plan);
+    try { const r = await vpsApi.planOs(plan.id); setOsOptions(r.data || []); }
+    catch { toast.error('Failed to load OS options'); }
+  };
 
-    const powerAction = async (id: string, action: string) => {
-        try {
-            await vpsApi.control(id, action);
-            toast.success(`${action} command sent`);
-            setTimeout(refreshList, 3000);
-        } catch (e: any) {
-            toast.error(e?.response?.data?.message || 'Action failed');
-        }
-    };
+  const create = async () => {
+    if (!selectedPlan || !selectedOs || !hostname.trim()) { toast.error('Fill all fields'); return; }
+    setCreating(true);
+    try { await vpsApi.create({ planId: selectedPlan.id, os: selectedOs, hostname: hostname.trim() }); toast.success('VPS provisioning started!'); setShowCreate(false); setSelectedPlan(null); setHostname(''); fetchInstances(); }
+    catch (e: any) { toast.error(e?.response?.data?.message || 'Failed'); }
+    finally { setCreating(false); }
+  };
 
-    const renewVps = async (id: string) => {
-        setRenewingId(id);
-        try {
-            await vpsApi.renew(id);
-            toast.success('VPS renewed for 30 days!');
-            refreshList();
-        } catch (e: any) {
-            toast.error(e?.response?.data?.message || 'Renewal failed');
-        } finally { setRenewingId(null); }
-    };
+  const control = async (id: string, action: string) => {
+    setActionLoading(`${id}-${action}`);
+    try { await vpsApi.control(id, action); toast.success(`Action: ${action}`); setTimeout(fetchInstances, 2000); }
+    catch { toast.error('Failed'); }
+    finally { setActionLoading(null); }
+  };
 
-    const terminateVps = async (id: string) => {
-        if (!confirm('Are you sure you want to terminate this VPS? All data will be lost.')) return;
-        try {
-            await vpsApi.terminate(id);
-            toast.success('VPS terminated');
-            refreshList();
-        } catch { toast.error('Termination failed'); }
-    };
+  const renew = async (id: string) => {
+    setActionLoading(`${id}-renew`);
+    try { await vpsApi.renew(id); toast.success('VPS renewed!'); fetchInstances(); }
+    catch (e: any) { toast.error(e?.response?.data?.message || 'Failed'); }
+    finally { setActionLoading(null); }
+  };
 
-    const formatRam = (mb: number) => mb >= 1024 ? `${(mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1)} GB` : `${mb} MB`;
-    const daysRemaining = (expiresAt: string | null) => {
-        if (!expiresAt) return null;
-        return Math.ceil((new Date(expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    };
+  const terminate = async (id: string) => {
+    try { await vpsApi.terminate(id); toast.success('VPS terminated'); setTerminateConfirm(null); fetchInstances(); }
+    catch { toast.error('Failed'); }
+  };
 
-    if (loading) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>;
+  const reinstall = async (id: string) => {
+    if (!reinstallOs) { toast.error('Select an OS'); return; }
+    try { await vpsApi.reinstall(id, reinstallOs); toast.success('Reinstalling...'); setReinstalling(null); fetchInstances(); }
+    catch { toast.error('Failed'); }
+  };
 
-    return (
-        <div>
-            <div className="flex items-center justify-between mb-8">
-                <div>
-                    <h1 className="text-2xl font-display font-bold">VPS Hosting</h1>
-                    <p className="text-gray-400 mt-1">Manage your virtual private servers</p>
-                </div>
-                <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10">
-                        <Wallet className="w-4 h-4 text-primary" />
-                        <span className="text-sm font-medium">₹{balance.toFixed(2)}</span>
-                    </div>
-                    <button onClick={() => setShowCreate(!showCreate)} className="btn-primary flex items-center gap-2">
-                        <Plus className="w-4 h-4" /> New VPS
-                    </button>
-                </div>
-            </div>
+  if (loading) return <div className="flex items-center justify-center py-20"><Loader2 className="w-7 h-7 text-primary animate-spin" /></div>;
 
-            {/* Create VPS */}
-            {showCreate && (
-                <div className="glass-card p-6 mb-6">
-                    <h3 className="font-semibold mb-4">Deploy New VPS</h3>
+  const activeCount = instances.filter(v => v.status === 'ACTIVE').length;
 
-                    {plans.length === 0 ? (
-                        <p className="text-gray-500 text-center py-4">No VPS plans available at this time.</p>
-                    ) : (
-                        <>
-                            <div className="grid md:grid-cols-3 gap-4 mb-4">
-                                {plans.map((plan: any) => (
-                                    <button key={plan.id}
-                                        onClick={() => setSelectedPlan(plan)}
-                                        className={`p-4 rounded-xl border text-left transition-all ${selectedPlan?.id === plan.id
-                                                ? 'border-primary bg-primary/10'
-                                                : 'border-white/10 bg-white/5 hover:border-white/20'
-                                            }`}>
-                                        <p className="font-semibold">{plan.name}</p>
-                                        <p className="text-sm text-gray-400 mt-1">
-                                            {formatRam(plan.ram)} RAM · {plan.cpu} vCPU · {plan.disk}GB Disk
-                                            {plan.bandwidth > 0 && ` · ${plan.bandwidth}TB BW`}
-                                        </p>
-                                        <p className="text-primary font-bold mt-2">₹{plan.price}/mo</p>
-                                        {balance < plan.price && (
-                                            <p className="text-xs text-red-400 mt-1">Insufficient balance</p>
-                                        )}
-                                    </button>
-                                ))}
-                            </div>
-                            <div className="grid md:grid-cols-2 gap-4 mb-4">
-                                <div>
-                                    <label htmlFor="vps-hostname" className="text-sm font-medium text-gray-300 mb-2 block">Hostname</label>
-                                    <input id="vps-hostname" type="text" value={hostname} onChange={(e) => setHostname(e.target.value)}
-                                        placeholder="my-vps-server" className="input-field w-full" maxLength={63} />
-                                </div>
-                                <div>
-                                    <label htmlFor="vps-os" className="text-sm font-medium text-gray-300 mb-2 block">Operating System</label>
-                                    {osLoading ? (
-                                        <div className="input-field w-full flex items-center gap-2 text-gray-500">
-                                            <div className="w-4 h-4 border-2 border-gray-500 border-t-transparent rounded-full animate-spin" />
-                                            Loading OS options...
-                                        </div>
-                                    ) : osList.length > 0 ? (
-                                        <select id="vps-os" value={os} onChange={(e) => setOs(e.target.value)}
-                                            className="input-field w-full bg-dark">
-                                            {osList.map((o: any) => (
-                                                <option key={o.id} value={o.id}>{o.name}</option>
-                                            ))}
-                                        </select>
-                                    ) : selectedPlan ? (
-                                        <div className="input-field w-full text-gray-500">No OS available — select a different plan</div>
-                                    ) : (
-                                        <div className="input-field w-full text-gray-500">Select a plan first</div>
-                                    )}
-                                </div>
-                            </div>
-                            {selectedPlan && (
-                                <div className="p-3 rounded-lg bg-white/5 border border-white/10 mb-4 text-sm text-gray-400">
-                                    <span className="font-medium text-white">Summary:</span> {selectedPlan.name} — ₹{selectedPlan.price}/mo will be deducted from your balance. Renews monthly.
-                                </div>
-                            )}
-                            <button onClick={createVps} disabled={creating || !selectedPlan || !os}
-                                className="btn-primary disabled:opacity-50">
-                                {creating ? 'Deploying...' : `Deploy VPS${selectedPlan ? ` — ₹${selectedPlan.price}` : ''}`}
-                            </button>
-                        </>
-                    )}
-                </div>
+  return (
+    <StaggerContainer className="space-y-6">
+      <FadeUpItem>
+        <div className="flex items-center justify-between">
+          <div className="page-header">
+            <h1 className="text-2xl font-display font-bold text-white">VPS Instances</h1>
+            {instances.length > 0 && (
+              <p className="text-sm text-gray-500 mt-1">{activeCount} active · {instances.length} total</p>
             )}
-
-            {/* VPS List */}
-            {vpsList.length === 0 ? (
-                <div className="glass-card p-16 text-center">
-                    <Server className="w-16 h-16 mx-auto mb-4 text-gray-600" />
-                    <h3 className="text-xl font-semibold mb-2">No VPS instances</h3>
-                    <p className="text-gray-400 mb-6">Deploy your first VPS server</p>
-                    <button onClick={() => setShowCreate(true)} className="btn-primary">Browse Plans</button>
-                </div>
-            ) : (
-                <div className="space-y-4">
-                    {vpsList.map((vps: any) => {
-                        const days = daysRemaining(vps.expiresAt);
-                        const isExpiringSoon = days !== null && days <= 7;
-                        const isExpired = days !== null && days <= 0;
-
-                        return (
-                            <div key={vps.id} className="glass-card p-6">
-                                <div className="flex items-center gap-4 mb-4">
-                                    <div className={`w-3 h-3 rounded-full ${vps.status === 'ACTIVE' ? 'bg-green-400 shadow-lg shadow-green-400/30' :
-                                            vps.status === 'PROVISIONING' ? 'bg-blue-400 animate-pulse' :
-                                                vps.status === 'SUSPENDED' ? 'bg-orange-400' : 'bg-red-400'
-                                        }`} />
-                                    <div className="flex-1 min-w-0">
-                                        <h3 className="font-semibold">{vps.hostname || vps.planName}</h3>
-                                        <p className="text-sm text-gray-500">{vps.ip || 'Provisioning...'} · {vps.os || 'N/A'}</p>
-                                    </div>
-                                    <span className={`text-xs font-medium px-3 py-1 rounded-full ${vps.status === 'ACTIVE' ? 'bg-green-500/10 text-green-400' :
-                                            vps.status === 'PROVISIONING' ? 'bg-blue-500/10 text-blue-400' :
-                                                vps.status === 'SUSPENDED' ? 'bg-orange-500/10 text-orange-400' : 'bg-red-500/10 text-red-400'
-                                        }`}>{vps.status}</span>
-                                </div>
-
-                                <div className="flex flex-wrap gap-4 text-sm text-gray-400 mb-4">
-                                    {vps.ram && <span>{formatRam(vps.ram)} RAM</span>}
-                                    {vps.cpu && <span>{vps.cpu} vCPU</span>}
-                                    {vps.disk && <span>{vps.disk}GB Disk</span>}
-                                    {vps.bandwidth > 0 && <span>{vps.bandwidth}TB BW</span>}
-                                    {vps.sellPrice != null && <span className="text-primary font-medium">₹{vps.sellPrice}/mo</span>}
-                                    {vps.vpsPlan?.displayName && <span className="text-gray-600">Plan: {vps.vpsPlan.displayName}</span>}
-                                    {!vps.vpsPlan?.displayName && vps.planName && <span className="text-gray-600">Plan: {vps.planName}</span>}
-                                </div>
-
-                                {/* Expiry info */}
-                                {days !== null && (
-                                    <div className={`flex items-center gap-2 text-xs mb-4 px-3 py-2 rounded-lg ${isExpired ? 'bg-red-500/10 text-red-400' :
-                                            isExpiringSoon ? 'bg-orange-500/10 text-orange-400' :
-                                                'bg-white/5 text-gray-500'
-                                        }`}>
-                                        <Clock className="w-3.5 h-3.5" />
-                                        {isExpired ? (
-                                            <span>Expired — Renew to prevent data loss</span>
-                                        ) : (
-                                            <span>Expires in {days} day{days !== 1 ? 's' : ''} ({new Date(vps.expiresAt).toLocaleDateString()})</span>
-                                        )}
-                                    </div>
-                                )}
-
-                                <div className="flex gap-2 flex-wrap">
-                                    {vps.status === 'ACTIVE' && (
-                                        <>
-                                            <button onClick={() => powerAction(vps.id, 'start')} className="p-2 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500/20" title="Start"><Power className="w-4 h-4" /></button>
-                                            <button onClick={() => powerAction(vps.id, 'stop')} className="p-2 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20" title="Stop"><Square className="w-4 h-4" /></button>
-                                            <button onClick={() => powerAction(vps.id, 'restart')} className="p-2 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20" title="Restart"><RefreshCw className="w-4 h-4" /></button>
-                                            <button onClick={() => powerAction(vps.id, 'shutdown')} className="p-2 rounded-lg bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20" title="Graceful Shutdown"><RotateCcw className="w-4 h-4" /></button>
-                                        </>
-                                    )}
-                                    {/* Renew button */}
-                                    {(vps.status === 'ACTIVE' || vps.status === 'SUSPENDED') && vps.sellPrice > 0 && (
-                                        <button
-                                            onClick={() => renewVps(vps.id)}
-                                            disabled={renewingId === vps.id}
-                                            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${isExpiringSoon || isExpired
-                                                ? 'bg-primary/20 text-primary hover:bg-primary/30 border border-primary/30'
-                                                : 'bg-white/5 text-gray-400 hover:bg-white/10'
-                                                }`}
-                                            title="Renew for 30 days"
-                                        >
-                                            <RefreshCw className={`w-3.5 h-3.5 ${renewingId === vps.id ? 'animate-spin' : ''}`} />
-                                            {renewingId === vps.id ? 'Renewing...' : `Renew ₹${vps.sellPrice}`}
-                                        </button>
-                                    )}
-                                    <button onClick={() => terminateVps(vps.id)} className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20" title="Terminate">
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
+          </div>
+          <button onClick={openCreate} className="btn-primary text-sm flex items-center gap-2"><Rocket className="w-4 h-4" /> Deploy VPS</button>
         </div>
-    );
+      </FadeUpItem>
+
+      {instances.length === 0 ? (
+        <FadeUpItem>
+          <div className="neo-card p-14 text-center">
+            <div className="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center mb-4" style={{ background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.15)' }}>
+              <Monitor className="w-8 h-8 text-primary/60" />
+            </div>
+            <p className="text-white font-medium">No VPS instances yet</p>
+            <p className="text-sm text-gray-600 mt-1">Deploy your first virtual private server</p>
+            <button onClick={openCreate} className="btn-primary text-sm mt-5 inline-flex items-center gap-2"><Rocket className="w-4 h-4" /> Deploy VPS</button>
+          </div>
+        </FadeUpItem>
+      ) : (
+        <div className="grid gap-4">
+          {instances.map((v: any) => {
+            const sc = STATUS_CFG[v.status] || STATUS_CFG.TERMINATED;
+            const daysLeft = v.expiresAt ? Math.ceil((new Date(v.expiresAt).getTime() - Date.now()) / 86400000) : null;
+            return (
+              <FadeUpItem key={v.id}>
+                <div className="neo-card overflow-hidden">
+                  {/* Card Header */}
+                  <div className="p-5 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: sc.bg, border: `1px solid ${sc.border}` }}>
+                        <Server className={`w-5 h-5 ${sc.text}`} />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-white text-sm">{v.hostname || v.planName || 'VPS'}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-md" style={{ background: sc.bg, border: `1px solid ${sc.border}` }}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${sc.dot}`} />
+                            <span className={sc.text}>{v.status}</span>
+                          </span>
+                          {v.os && <span className="text-[11px] text-gray-600">{v.os}</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 text-[12px] text-gray-500">
+                      {v.ram && <span className="flex items-center gap-1"><MemoryStick className="w-3 h-3" />{v.ram >= 1024 ? `${(v.ram/1024).toFixed(0)}G` : `${v.ram}M`}</span>}
+                      {v.cpu && <span className="flex items-center gap-1"><Cpu className="w-3 h-3" />{v.cpu} vCPU</span>}
+                      {v.disk && <span className="flex items-center gap-1"><HardDrive className="w-3 h-3" />{v.disk}G</span>}
+                    </div>
+                  </div>
+
+                  {/* Details Row */}
+                  {(v.ip || v.expiresAt) && (
+                    <div className="px-5 pb-3 flex items-center gap-4 flex-wrap">
+                      {v.ip && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <Globe className="w-3.5 h-3.5 text-gray-600" />
+                          <span className="font-mono text-gray-300 text-[13px]">{v.ip}</span>
+                          <button onClick={() => { navigator.clipboard.writeText(v.ip); toast.success('Copied!'); }} className="text-gray-600 hover:text-primary transition-colors"><Copy className="w-3 h-3" /></button>
+                        </div>
+                      )}
+                      {v.expiresAt && (
+                        <div className={`flex items-center gap-1 text-[12px] ml-auto ${daysLeft !== null && daysLeft <= 3 ? 'text-red-400 font-medium' : daysLeft !== null && daysLeft <= 7 ? 'text-orange-400' : 'text-gray-500'}`}>
+                          <Clock className="w-3 h-3" />
+                          Expires {new Date(v.expiresAt).toLocaleDateString()}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-2 px-5 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.01)' }}>
+                    {v.status === 'ACTIVE' && (
+                      <>
+                        <button onClick={() => control(v.id, 'start')} disabled={!!actionLoading} title="Start"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-30 transition-colors" style={{ background: 'rgba(16,185,129,0.06)' }}>
+                          <Play className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => control(v.id, 'stop')} disabled={!!actionLoading} title="Stop"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-red-400 hover:bg-red-500/10 disabled:opacity-30 transition-colors" style={{ background: 'rgba(239,68,68,0.06)' }}>
+                          <Square className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => control(v.id, 'restart')} disabled={!!actionLoading} title="Restart"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-yellow-400 hover:bg-yellow-500/10 disabled:opacity-30 transition-colors" style={{ background: 'rgba(234,179,8,0.06)' }}>
+                          <RotateCcw className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => { setReinstalling(v.id); vpsApi.planOs(v.vpsPlanId).then(r => setOsOptions(r.data || [])).catch(() => {}); }} title="Reinstall"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:bg-white/5 transition-colors" style={{ background: 'rgba(255,255,255,0.03)' }}>
+                          <RefreshCw className="w-3.5 h-3.5" /></button>
+                      </>
+                    )}
+                    <button onClick={() => renew(v.id)} disabled={!!actionLoading} className="ml-auto btn-secondary text-xs">
+                      {actionLoading === `${v.id}-renew` ? <Loader2 className="w-3 h-3 animate-spin" /> : `Renew${v.sellPrice ? ` ₹${v.sellPrice}` : ''}`}
+                    </button>
+                    <button onClick={() => setTerminateConfirm(v.id)} className="btn-danger text-xs"><Trash2 className="w-3 h-3" /></button>
+                  </div>
+                </div>
+              </FadeUpItem>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Create Modal */}
+      <AnimatePresence>
+        {showCreate && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="neo-card max-w-lg w-full my-8 overflow-hidden">
+              {/* Modal Header */}
+              <div className="p-5 flex items-center justify-between" style={{ background: 'linear-gradient(180deg, rgba(0,212,255,0.06) 0%, transparent 100%)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.2)' }}>
+                    <Rocket className="w-4 h-4 text-primary" />
+                  </div>
+                  <h3 className="text-base font-display font-bold text-white">Deploy VPS</h3>
+                </div>
+                <button onClick={() => { setShowCreate(false); setSelectedPlan(null); }} className="text-gray-500 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                {!selectedPlan ? (
+                  <div className="grid gap-2">
+                    {plans.map((p: any) => (
+                      <button key={p.id} onClick={() => pickPlan(p)} className="table-row group">
+                        <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.15)' }}>
+                          <Server className="w-4 h-4 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-white text-sm">{p.name || p.displayName}</p>
+                          <p className="text-[11px] text-gray-500 mt-0.5">{p.ram >= 1024 ? `${(p.ram/1024).toFixed(0)}G` : `${p.ram}M`} RAM · {p.cpu} vCPU · {p.disk}G Disk</p>
+                        </div>
+                        <div className="text-right flex items-center gap-2">
+                          <p className="font-semibold text-white text-sm">₹{p.sellPrice || p.price}<span className="text-gray-600 text-[11px]">/mo</span></p>
+                          <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-primary transition-colors" />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between p-3 rounded-xl" style={{ background: 'rgba(0,212,255,0.05)', border: '1px solid rgba(0,212,255,0.1)' }}>
+                      <div>
+                        <p className="text-sm font-medium text-white">{selectedPlan.name || selectedPlan.displayName}</p>
+                        <p className="text-[11px] text-gray-500">₹{selectedPlan.sellPrice || selectedPlan.price}/mo</p>
+                      </div>
+                      <button onClick={() => setSelectedPlan(null)} className="text-[12px] text-primary hover:text-primary/80 font-medium transition-colors">Change</button>
+                    </div>
+
+                    <div>
+                      <label className="text-[12px] text-gray-500 mb-2 block font-medium uppercase tracking-wider">Operating System</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {osOptions.map((os: any) => (
+                          <button key={os.id} onClick={() => setSelectedOs(os.id || os.name)}
+                            className={`p-3 rounded-xl text-sm text-left transition-all ${selectedOs === (os.id || os.name) ? 'text-primary' : 'text-gray-300 hover:bg-white/[0.03]'}`}
+                            style={selectedOs === (os.id || os.name) ? { background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.2)' } : { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                            {os.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[12px] text-gray-500 mb-2 block font-medium uppercase tracking-wider">Hostname</label>
+                      <input type="text" value={hostname} onChange={e => setHostname(e.target.value)} placeholder="my-vps" className="input-field" />
+                    </div>
+
+                    <button onClick={create} disabled={creating} className="btn-primary w-full flex items-center justify-center gap-2">
+                      {creating ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Rocket className="w-4 h-4" /> Deploy VPS</>}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Terminate Confirm */}
+      <AnimatePresence>
+        {terminateConfirm && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="neo-card overflow-hidden max-w-sm w-full">
+              <div className="p-5" style={{ background: 'linear-gradient(180deg, rgba(239,68,68,0.06) 0%, transparent 100%)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <h3 className="text-base font-semibold text-white flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-red-400" /> Terminate VPS</h3>
+              </div>
+              <div className="p-5">
+                <p className="text-sm text-gray-400">This will permanently destroy this VPS and all its data. This action cannot be undone.</p>
+                <div className="flex gap-3 justify-end mt-5">
+                  <button onClick={() => setTerminateConfirm(null)} className="btn-secondary text-sm">Cancel</button>
+                  <button onClick={() => terminate(terminateConfirm)} className="btn-danger text-sm">Terminate</button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Reinstall Modal */}
+      <AnimatePresence>
+        {reinstalling && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="neo-card overflow-hidden max-w-sm w-full">
+              <div className="p-5" style={{ background: 'linear-gradient(180deg, rgba(234,179,8,0.06) 0%, transparent 100%)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <h3 className="text-base font-semibold text-white flex items-center gap-2"><RefreshCw className="w-4 h-4 text-yellow-400" /> Reinstall OS</h3>
+              </div>
+              <div className="p-5 space-y-4">
+                <div className="grid grid-cols-2 gap-2">
+                  {osOptions.map((os: any) => (
+                    <button key={os.id || os.name} onClick={() => setReinstallOs(os.id || os.name)}
+                      className={`p-3 rounded-xl text-sm text-left transition-all ${reinstallOs === (os.id || os.name) ? 'text-primary' : 'text-gray-300 hover:bg-white/[0.03]'}`}
+                      style={reinstallOs === (os.id || os.name) ? { background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.2)' } : { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      {os.name}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-3 justify-end">
+                  <button onClick={() => setReinstalling(null)} className="btn-secondary text-sm">Cancel</button>
+                  <button onClick={() => reinstall(reinstalling)} className="btn-danger text-sm">Reinstall</button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </StaggerContainer>
+  );
 }

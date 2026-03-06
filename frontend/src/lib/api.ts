@@ -81,6 +81,7 @@ export const billingApi = {
     cashfreeVerify: (orderId: string) => api.post('/billing/cashfree/verify', { orderId }),
     upiSubmit: (data: any) => api.post('/billing/upi/submit', data),
     balancePay: (amount: number, serverId?: string) => api.post('/billing/balance/pay', { amount, serverId }),
+    transactions: (page = 1) => api.get(`/billing/balance/transactions?page=${page}`),
 };
 
 // Credits

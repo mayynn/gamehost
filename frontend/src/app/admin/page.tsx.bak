@@ -1,0 +1,548 @@
+'use client';
+
+import { useEffect, useState, useCallback } from 'react';
+import { adminApi, plansApi } from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
+import toast from 'react-hot-toast';
+import {
+  LayoutDashboard, Users, Server, Shield, Package, Cloud, Megaphone, IndianRupee,
+  Settings, FileText, Loader2, Trash2, Ban, CheckCircle, XCircle, Search,
+  ChevronLeft, ChevronRight, Crown, AlertTriangle, Plus, Edit3, X, RefreshCw,
+  Eye, UserMinus, Clock
+} from 'lucide-react';
+
+const TABS = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'users', label: 'Users', icon: Users },
+  { id: 'servers', label: 'Servers', icon: Server },
+  { id: 'alts', label: 'Alt Detection', icon: Shield },
+  { id: 'plans', label: 'Plans', icon: Package },
+  { id: 'vps', label: 'VPS Plans', icon: Cloud },
+  { id: 'upi', label: 'UPI Approvals', icon: IndianRupee },
+  { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'audit', label: 'Audit Logs', icon: FileText },
+];
+
+export default function AdminPage() {
+  const { user } = useAuth();
+  const router = useRouter();
+  const [tab, setTab] = useState('dashboard');
+
+  useEffect(() => { if (user && user.role !== 'ADMIN') router.push('/dashboard'); }, [user, router]);
+  if (!user || user.role !== 'ADMIN') return null;
+
+  return (
+    <div className="space-y-6">
+      <div className="page-header">
+        <h1 className="text-2xl font-display font-bold text-white flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(255,77,106,0.1)', border: '1px solid rgba(255,77,106,0.2)' }}>
+            <Shield className="w-4 h-4 text-accent" />
+          </div>
+          Admin Panel
+        </h1>
+      </div>
+      <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-none p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] font-medium whitespace-nowrap transition-all ${tab === t.id ? 'text-primary' : 'text-gray-500 hover:text-white hover:bg-white/[0.03]'}`}
+            style={tab === t.id ? { background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.15)' } : undefined}>
+            <t.icon className="w-3.5 h-3.5" />{t.label}
+          </button>
+        ))}
+      </div>
+      <AnimatePresence mode="wait">
+        <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+          {tab === 'dashboard' && <DashboardTab />}
+          {tab === 'users' && <UsersTab />}
+          {tab === 'servers' && <ServersTab />}
+          {tab === 'alts' && <AltsTab />}
+          {tab === 'plans' && <PlansTab />}
+          {tab === 'vps' && <VpsPlansTab />}
+          {tab === 'upi' && <UpiTab />}
+          {tab === 'settings' && <SettingsTab />}
+          {tab === 'audit' && <AuditTab />}
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ──── Dashboard ──── */
+function DashboardTab() {
+  const [stats, setStats] = useState<any>(null);
+  useEffect(() => { adminApi.dashboard().then(r => setStats(r.data)).catch(() => toast.error('Failed')); }, []);
+  if (!stats) return <Loader />;
+  const items = [
+    { label: 'Users', value: stats.totalUsers ?? stats.users, color: 'cyan' },
+    { label: 'Servers', value: stats.totalServers ?? stats.servers, color: 'green' },
+    { label: 'Active Servers', value: stats.activeServers, color: 'green' },
+    { label: 'Revenue', value: stats.totalRevenue != null ? `₹${stats.totalRevenue}` : undefined, color: 'yellow' },
+    { label: 'Pending UPI', value: stats.pendingUpi ?? stats.pendingPayments, color: 'orange' },
+    { label: 'VPS Instances', value: stats.totalVps ?? stats.vpsInstances, color: 'purple' },
+  ].filter(i => i.value !== undefined);
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+      {items.map(i => (
+        <div key={i.label} className={`stat-card stat-card-${i.color} p-5`}>
+          <p className="text-[11px] text-gray-500 uppercase tracking-wider font-medium">{i.label}</p>
+          <p className="text-2xl font-display font-bold text-white mt-1">{i.value}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ──── Users ──── */
+function UsersTab() {
+  const [users, setUsers] = useState<any[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  const fetch = useCallback(async () => {
+    setLoading(true);
+    try { const r = await adminApi.users(page); setUsers(r.data?.data || r.data?.users || r.data || []); setTotal(r.data?.total || r.data?.meta?.total || 0); }
+    catch {} finally { setLoading(false); }
+  }, [page]);
+  useEffect(() => { fetch(); }, [fetch]);
+
+  const setRole = async (id: string, role: string) => {
+    try { await adminApi.setRole(id, role); toast.success('Role updated'); fetch(); }
+    catch { toast.error('Failed'); }
+  };
+  const deleteUser = async (id: string) => {
+    if (!confirm('Delete user? This removes all their servers.')) return;
+    try { await adminApi.deleteUser(id); toast.success('Deleted'); fetch(); }
+    catch { toast.error('Failed'); }
+  };
+
+  const filtered = search ? users.filter(u => u.email?.toLowerCase().includes(search.toLowerCase()) || u.name?.toLowerCase().includes(search.toLowerCase())) : users;
+
+  return (
+    <div className="space-y-4">
+      <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" /><input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter users..." className="input-field pl-10 text-sm" /></div>
+      {loading ? <Loader /> : (
+        <>
+          <div className="neo-card overflow-hidden">
+            <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+            {filtered.map((u: any) => (
+              <div key={u.id} className="table-row">
+                <div className="avatar w-8 h-8 text-xs">{u.name?.[0]?.toUpperCase() || '?'}</div>
+                <div className="flex-1 min-w-0"><p className="text-sm text-white font-medium truncate">{u.name}</p><p className="text-[11px] text-gray-500 truncate">{u.email}</p></div>
+                <span className="text-[11px] px-2 py-0.5 rounded-md font-medium" style={u.role === 'ADMIN' ? { background: 'rgba(234,179,8,0.08)', color: '#facc15', border: '1px solid rgba(234,179,8,0.2)' } : { background: 'rgba(255,255,255,0.04)', color: '#9ca3af' }}>{u.role}</span>
+                <button onClick={() => setRole(u.id, u.role === 'ADMIN' ? 'USER' : 'ADMIN')} className="text-gray-500 hover:text-primary transition-colors"><Crown className="w-3.5 h-3.5" /></button>
+                <button onClick={() => deleteUser(u.id)} className="text-gray-500 hover:text-red-400 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+              </div>
+            ))}
+            </div>
+          </div>
+          <Pagination page={page} setPage={setPage} total={total} />
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ──── Servers ──── */
+function ServersTab() {
+  const [servers, setServers] = useState<any[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    setLoading(true);
+    try { const r = await adminApi.servers(page); setServers(r.data?.data || r.data?.servers || r.data || []); setTotal(r.data?.total || 0); }
+    catch {} finally { setLoading(false); }
+  }, [page]);
+  useEffect(() => { fetch(); }, [fetch]);
+
+  const suspend = async (id: string) => { try { await adminApi.suspendServer(id); toast.success('Suspended'); fetch(); } catch { toast.error('Failed'); } };
+  const unsuspend = async (id: string) => { try { await adminApi.unsuspendServer(id); toast.success('Unsuspended'); fetch(); } catch { toast.error('Failed'); } };
+  const remove = async (id: string) => { if (!confirm('Delete server?')) return; try { await adminApi.deleteServer(id); toast.success('Deleted'); fetch(); } catch { toast.error('Failed'); } };
+
+  return (
+    <div className="space-y-4">
+      {loading ? <Loader /> : (
+        <>
+          <div className="neo-card overflow-hidden">
+            <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+            {servers.map((s: any) => (
+              <div key={s.id} className="table-row">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.15)' }}><Server className="w-3.5 h-3.5 text-primary" /></div>
+                <div className="flex-1 min-w-0"><p className="text-sm text-white font-medium truncate">{s.name}</p><p className="text-[11px] text-gray-500">{s.user?.email || s.userId}</p></div>
+                <span className="text-[11px] px-2 py-0.5 rounded-md font-medium" style={s.status === 'ACTIVE' ? { background: 'rgba(16,185,129,0.08)', color: '#34d399', border: '1px solid rgba(16,185,129,0.2)' } : s.status === 'SUSPENDED' ? { background: 'rgba(239,68,68,0.08)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' } : { background: 'rgba(107,114,128,0.08)', color: '#9ca3af' }}>{s.status}</span>
+                {s.status === 'SUSPENDED' ? <button onClick={() => unsuspend(s.id)} className="text-emerald-400 hover:text-emerald-300 transition-colors"><CheckCircle className="w-4 h-4" /></button>
+                  : <button onClick={() => suspend(s.id)} className="text-yellow-400 hover:text-yellow-300 transition-colors"><Ban className="w-4 h-4" /></button>}
+                <button onClick={() => remove(s.id)} className="text-gray-500 hover:text-red-400 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+              </div>
+            ))}
+            </div>
+          </div>
+          <Pagination page={page} setPage={setPage} total={total} />
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ──── Alt Detection ──── */
+function AltsTab() {
+  const [groups, setGroups] = useState<any[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    setLoading(true);
+    try { const r = await adminApi.altAccounts(page); setGroups(r.data?.altGroups || r.data?.data || []); setTotal(r.data?.total || 0); }
+    catch {} finally { setLoading(false); }
+  }, [page]);
+  useEffect(() => { fetch(); }, [fetch]);
+
+  const deleteAlts = async (ids: string[]) => {
+    if (!confirm(`Delete ${ids.length} alt account(s)?`)) return;
+    try { await adminApi.deleteAlts(ids); toast.success('Deleted'); fetch(); }
+    catch { toast.error('Failed'); }
+  };
+
+  return (
+    <div className="space-y-4">
+      {loading ? <Loader /> : groups.length === 0 ? (
+        <div className="neo-card p-8 text-center text-gray-500 text-sm">No alt account groups detected</div>
+      ) : (
+        <>
+          <div className="grid gap-3">
+            {groups.map((g: any, i: number) => (
+              <div key={i} className="neo-card p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-white">IP: {g.ip || g.ipAddress || 'Unknown'} ({g.users?.length || g.count || 0} accounts)</p>
+                  {g.users?.length > 1 && <button onClick={() => deleteAlts(g.users.slice(1).map((u: any) => u.id))} className="text-xs text-red-400 hover:text-red-300">Delete Alts</button>}
+                </div>
+                {g.users?.map((u: any) => (
+                  <div key={u.id} className="flex items-center gap-2 text-xs text-gray-400 pl-4">
+                    <span className="text-gray-300">{u.name}</span> · <span>{u.email}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+          <Pagination page={page} setPage={setPage} total={total} />
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ──── Plans ──── */
+function PlansTab() {
+  const [plans, setPlans] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+
+  const fetch = useCallback(async () => {
+    setLoading(true);
+    try { const r = await plansApi.list(); setPlans(r.data || []); }
+    catch {} finally { setLoading(false); }
+  }, []);
+  useEffect(() => { fetch(); }, [fetch]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      if (editing.id) await adminApi.updatePlan(editing.id, editing);
+      else await adminApi.createPlan(editing);
+      toast.success('Saved'); setEditing(null); fetch();
+    } catch (e: any) { toast.error(e?.response?.data?.message || 'Failed'); }
+    finally { setSaving(false); }
+  };
+
+  const remove = async (id: string) => {
+    if (!confirm('Delete plan?')) return;
+    try { await adminApi.deletePlan(id); toast.success('Deleted'); fetch(); }
+    catch { toast.error('Failed'); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <button onClick={() => setEditing({ name: '', type: 'PREMIUM', ram: 1024, cpu: 100, disk: 5120, pricePerMonth: 0, isActive: true, sortOrder: 0 })}
+          className="btn-primary text-sm flex items-center gap-2"><Plus className="w-4 h-4" /> New Plan</button>
+      </div>
+      {loading ? <Loader /> : (
+        <div className="neo-card overflow-hidden">
+          <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+          {plans.map((p: any) => (
+            <div key={p.id} className="table-row">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.15)' }}><Package className="w-3.5 h-3.5 text-primary" /></div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-white font-medium">{p.name} <span className="text-[11px] ml-1 px-1.5 py-0.5 rounded-md" style={p.type === 'FREE' ? { background: 'rgba(34,197,94,0.08)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.2)' } : p.type === 'CUSTOM' ? { background: 'rgba(124,58,237,0.08)', color: '#a78bfa', border: '1px solid rgba(124,58,237,0.2)' } : { background: 'rgba(0,212,255,0.08)', color: '#00d4ff', border: '1px solid rgba(0,212,255,0.2)' }}>{p.type}</span></p>
+                <p className="text-[11px] text-gray-500">{p.ram >= 1024 ? `${(p.ram/1024).toFixed(1)}G` : `${p.ram}M`} RAM · {p.cpu}% CPU · {p.type !== 'FREE' ? `₹${p.pricePerMonth}/mo` : 'Free'}</p>
+              </div>
+              <span className={`w-2 h-2 rounded-full ${p.isActive ? 'bg-green-400' : 'bg-gray-500'}`} />
+              <button onClick={() => setEditing({ ...p })} className="text-gray-500 hover:text-primary transition-colors"><Edit3 className="w-3.5 h-3.5" /></button>
+              <button onClick={() => remove(p.id)} className="text-gray-500 hover:text-red-400 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+            </div>
+          ))}
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      <AnimatePresence>
+        {editing && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} className="neo-card max-w-md w-full overflow-hidden my-8">
+              <div className="px-6 py-4 flex items-center justify-between" style={{ background: 'linear-gradient(135deg, rgba(0,212,255,0.08), rgba(124,58,237,0.08))', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                <h3 className="text-lg font-semibold text-white">{editing.id ? 'Edit' : 'Create'} Plan</h3>
+                <button onClick={() => setEditing(null)}><X className="w-5 h-5 text-gray-500" /></button>
+              </div>
+              <div className="p-6 space-y-4">
+                <input type="text" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} placeholder="Plan name" className="input-field text-sm" />
+                <select value={editing.type} onChange={e => setEditing({ ...editing, type: e.target.value })} className="input-field text-sm">
+                  <option value="FREE">FREE</option><option value="PREMIUM">PREMIUM</option><option value="CUSTOM">CUSTOM</option>
+                </select>
+                <div className="grid grid-cols-3 gap-2">
+                  <div><label className="text-xs text-gray-500">RAM (MB)</label><input type="number" value={editing.ram} onChange={e => setEditing({ ...editing, ram: +e.target.value })} className="input-field text-sm" /></div>
+                  <div><label className="text-xs text-gray-500">CPU (%)</label><input type="number" value={editing.cpu} onChange={e => setEditing({ ...editing, cpu: +e.target.value })} className="input-field text-sm" /></div>
+                  <div><label className="text-xs text-gray-500">Disk (MB)</label><input type="number" value={editing.disk} onChange={e => setEditing({ ...editing, disk: +e.target.value })} className="input-field text-sm" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div><label className="text-xs text-gray-500">Price/month</label><input type="number" value={editing.pricePerMonth ?? 0} onChange={e => setEditing({ ...editing, pricePerMonth: +e.target.value })} className="input-field text-sm" /></div>
+                  <div><label className="text-xs text-gray-500">Sort Order</label><input type="number" value={editing.sortOrder ?? 0} onChange={e => setEditing({ ...editing, sortOrder: +e.target.value })} className="input-field text-sm" /></div>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-gray-300">
+                  <input type="checkbox" checked={editing.isActive ?? true} onChange={e => setEditing({ ...editing, isActive: e.target.checked })} className="accent-primary" /> Active
+                </label>
+              </div>
+              <div className="px-6 py-4 flex gap-3 justify-end" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                <button onClick={() => setEditing(null)} className="btn-secondary text-sm">Cancel</button>
+                <button onClick={save} disabled={saving} className="btn-primary text-sm">{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save'}</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ──── VPS Plans ──── */
+function VpsPlansTab() {
+  const [plans, setPlans] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+
+  const fetch = useCallback(async () => {
+    setLoading(true);
+    try { const r = await adminApi.vpsPlans(); setPlans(r.data || []); }
+    catch {} finally { setLoading(false); }
+  }, []);
+  useEffect(() => { fetch(); }, [fetch]);
+
+  const sync = async () => {
+    setSyncing(true);
+    try { await adminApi.syncVpsPlans(); toast.success('Synced'); fetch(); }
+    catch { toast.error('Sync failed'); }
+    finally { setSyncing(false); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <button onClick={sync} disabled={syncing} className="btn-secondary text-sm flex items-center gap-2">
+          {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Sync from Datalix
+        </button>
+      </div>
+      {loading ? <Loader /> : (
+        <div className="neo-card overflow-hidden">
+          <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+          {plans.map((p: any) => (
+            <div key={p.id} className="table-row">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.15)' }}><Cloud className="w-3.5 h-3.5 text-purple-400" /></div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-white font-medium">{p.displayName || p.datalixPlanName}</p>
+                <p className="text-[11px] text-gray-500">{p.ram >= 1024 ? `${(p.ram/1024).toFixed(0)}G` : `${p.ram}M`} RAM · {p.cpu} vCPU · {p.disk}G Disk · Cost ₹{p.costPrice} → Sell ₹{p.sellPrice}</p>
+              </div>
+              <span className={`w-2 h-2 rounded-full ${p.isActive ? 'bg-green-400' : 'bg-gray-500'}`} />
+            </div>
+          ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ──── UPI Approvals ──── */
+function UpiTab() {
+  const [payments, setPayments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    setLoading(true);
+    try { const r = await adminApi.pendingUpi(); setPayments(r.data || []); }
+    catch {} finally { setLoading(false); }
+  }, []);
+  useEffect(() => { fetch(); }, [fetch]);
+
+  const approve = async (id: string) => { try { await adminApi.approveUpi(id); toast.success('Approved'); fetch(); } catch { toast.error('Failed'); } };
+  const reject = async (id: string) => { try { await adminApi.rejectUpi(id); toast.success('Rejected'); fetch(); } catch { toast.error('Failed'); } };
+
+  return (
+    <div className="space-y-4">
+      {loading ? <Loader /> : payments.length === 0 ? (
+        <div className="neo-card p-8 text-center text-gray-500 text-sm">No pending UPI payments</div>
+      ) : (
+        <div className="neo-card overflow-hidden">
+          <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+          {payments.map((p: any) => (
+            <div key={p.id} className="table-row">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.15)' }}><IndianRupee className="w-3.5 h-3.5 text-yellow-400" /></div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-white font-medium">₹{p.amount} <span className="text-[11px] text-gray-500 ml-1">UTR: {p.utr}</span></p>
+                <p className="text-[11px] text-gray-500">{p.user?.email || p.userId} · {new Date(p.createdAt).toLocaleDateString()}</p>
+              </div>
+              <button onClick={() => approve(p.id)} className="w-8 h-8 rounded-lg flex items-center justify-center text-emerald-400 transition-colors" style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.15)' }}><CheckCircle className="w-4 h-4" /></button>
+              <button onClick={() => reject(p.id)} className="w-8 h-8 rounded-lg flex items-center justify-center text-red-400 transition-colors" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)' }}><XCircle className="w-4 h-4" /></button>
+            </div>
+          ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ──── Settings ──── */
+function SettingsTab() {
+  const [settings, setSettings] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    adminApi.settings().then(r => {
+      const s: Record<string, string> = {};
+      if (Array.isArray(r.data)) r.data.forEach((i: any) => { s[i.key] = i.value; });
+      else if (typeof r.data === 'object') Object.assign(s, r.data);
+      setSettings(s);
+    }).catch(() => toast.error('Failed')).finally(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try { await adminApi.updateSettings(settings); toast.success('Settings saved'); }
+    catch { toast.error('Failed'); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return <Loader />;
+
+  const groups = [
+    { title: 'General', keys: ['SITE_NAME', 'DISCORD_INVITE_URL', 'SUPPORT_EMAIL'] },
+    { title: 'Ads / Credits', keys: ['ads_provider', 'ads_timer_seconds', 'ads_reward', 'ads_anti_adblock', 'ads_adsense_enabled'] },
+    { title: 'System', keys: ['VPS_ENABLED', 'MAINTENANCE_MODE'] },
+  ];
+
+  const otherKeys = Object.keys(settings).filter(k => !groups.some(g => g.keys.includes(k)));
+
+  return (
+    <div className="space-y-4">
+      {groups.map(g => (
+        <div key={g.title} className="neo-card overflow-hidden">
+          <div className="px-4 py-3 flex items-center gap-2" style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 className="text-sm font-semibold text-white">{g.title}</h3>
+          </div>
+          <div className="p-4 space-y-3">
+          {g.keys.map(k => (
+            <div key={k} className="flex items-center gap-3">
+              <label className="text-xs text-gray-500 w-40 shrink-0 font-mono">{k}</label>
+              <input type="text" value={settings[k] ?? ''} onChange={e => setSettings({ ...settings, [k]: e.target.value })}
+                className="input-field text-sm flex-1" />
+            </div>
+          ))}
+          </div>
+        </div>
+      ))}
+      {otherKeys.length > 0 && (
+        <div className="neo-card overflow-hidden">
+          <div className="px-4 py-3" style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 className="text-sm font-semibold text-white">Other</h3>
+          </div>
+          <div className="p-4 space-y-3">
+          {otherKeys.map(k => (
+            <div key={k} className="flex items-center gap-3">
+              <label className="text-xs text-gray-500 w-40 shrink-0 font-mono truncate">{k}</label>
+              <input type="text" value={settings[k] ?? ''} onChange={e => setSettings({ ...settings, [k]: e.target.value })}
+                className="input-field text-sm flex-1" />
+            </div>
+          ))}
+          </div>
+        </div>
+      )}
+      <button onClick={save} disabled={saving} className="btn-primary text-sm">
+        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Settings'}
+      </button>
+    </div>
+  );
+}
+
+/* ──── Audit Logs ──── */
+function AuditTab() {
+  const [logs, setLogs] = useState<any[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    setLoading(true);
+    try { const r = await adminApi.auditLogs(page); setLogs(r.data?.data || r.data || []); setTotal(r.data?.total || 0); }
+    catch {} finally { setLoading(false); }
+  }, [page]);
+  useEffect(() => { fetch(); }, [fetch]);
+
+  return (
+    <div className="space-y-4">
+      {loading ? <Loader /> : logs.length === 0 ? (
+        <div className="neo-card p-8 text-center text-gray-500 text-sm">No audit logs</div>
+      ) : (
+        <>
+          <div className="neo-card overflow-hidden">
+            <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+            {logs.map((l: any) => (
+              <div key={l.id} className="px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-white font-medium">{l.action}</p>
+                  <span className="text-[11px] text-gray-600 font-mono">{new Date(l.createdAt).toLocaleString()}</span>
+                </div>
+                {l.user && <p className="text-[11px] text-gray-500 mt-0.5">{l.user?.email || l.userId}</p>}
+                {l.details && <p className="text-[11px] text-gray-600 mt-0.5 font-mono truncate">{typeof l.details === 'string' ? l.details : JSON.stringify(l.details)}</p>}
+              </div>
+            ))}
+            </div>
+          </div>
+          <Pagination page={page} setPage={setPage} total={total} />
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ──── Helpers ──── */
+function Loader() { return <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>; }
+
+function Pagination({ page, setPage, total, perPage = 20 }: { page: number; setPage: (p: number) => void; total: number; perPage?: number }) {
+  const maxPage = Math.max(1, Math.ceil(total / perPage));
+  if (maxPage <= 1) return null;
+  return (
+    <div className="flex items-center justify-center gap-3">
+      <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page <= 1} className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 disabled:opacity-30 transition-colors" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}><ChevronLeft className="w-4 h-4" /></button>
+      <span className="text-[12px] text-gray-500 font-medium">{page} / {maxPage}</span>
+      <button onClick={() => setPage(Math.min(maxPage, page + 1))} disabled={page >= maxPage} className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 disabled:opacity-30 transition-colors" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}><ChevronRight className="w-4 h-4" /></button>
+    </div>
+  );
+}
