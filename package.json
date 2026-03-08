@@ -11,7 +11,17 @@
     "logs": "docker compose logs -f",
     "logs:backend": "docker compose logs -f backend",
     "logs:frontend": "docker compose logs -f frontend",
-    "status": "docker compose ps"
+    "status": "docker compose ps",
+    "build": "docker compose build",
+    "build:no-cache": "docker compose build --no-cache",
+    "up": "docker compose up -d",
+    "down": "docker compose down",
+    "typecheck:backend": "cd backend && npx tsc --noEmit",
+    "typecheck:frontend": "cd frontend && npx tsc --noEmit",
+    "validate": "npm run typecheck:backend && npm run typecheck:frontend",
+    "prisma:migrate": "docker compose exec backend npx prisma migrate deploy",
+    "prisma:studio": "cd backend && npx prisma studio",
+    "health": "curl -s http://localhost:${BACKEND_PORT:-4000}/api/health | head -c 500"
   },
   "dependencies": {
     "clsx": "^2.1.1",

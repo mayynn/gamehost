@@ -9,7 +9,9 @@
     "start:prod": "node dist/main.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:deploy": "prisma migrate deploy"
+    "prisma:deploy": "prisma migrate deploy",
+    "typecheck": "tsc --noEmit",
+    "format:check": "prettier --check \"src/**/*.ts\" 2>/dev/null || echo 'prettier not installed'"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",

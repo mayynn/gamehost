@@ -4,6 +4,7 @@ import {
 import { ServersService } from './servers.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../../common/interfaces';
 import { CreateServerDto } from './dto/create-server.dto';
 import { PowerActionDto } from './dto/power-action.dto';
 import {
@@ -128,7 +129,7 @@ export class ServersController {
 
     @Delete(':id/databases/:dbId')
     deleteDatabase(@CurrentUser() user: any, @Param('id') id: string, @Param('dbId') dbId: string) {
-        return this.serversService.deleteDatabase2(user.id, id, dbId);
+        return this.serversService.deleteDatabaseById(user.id, id, dbId);
     }
 
     @Put(':id/files/rename')

@@ -24,10 +24,11 @@ export default function DashboardPage() {
   const [balance, setBalance] = useState(0);
   const [credits, setCredits] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     Promise.all([
-      serversApi.list().then(r => setServers(r.data)).catch(() => {}),
+      serversApi.list().then(r => setServers(r.data)).catch(() => setError(true)),
       billingApi.balance().then(r => setBalance(typeof r.data === 'number' ? r.data : (r.data?.balance ?? r.data?.amount ?? 0))).catch(() => {}),
       creditsApi.get().then(r => setCredits(typeof r.data === 'number' ? r.data : (r.data?.amount ?? 0))).catch(() => {}),
     ]).finally(() => setLoading(false));

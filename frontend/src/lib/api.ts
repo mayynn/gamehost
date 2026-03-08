@@ -8,7 +8,27 @@ export const api = axios.create({
     baseURL: `${API_URL}/api`,
     withCredentials: true,
     headers: { 'Content-Type': 'application/json' },
+    timeout: 30000,
 });
+
+// Global response interceptor — redirect to login on 401 (expired session)
+api.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        if (
+            error.response?.status === 401 &&
+            typeof window !== 'undefined' &&
+            !window.location.pathname.startsWith('/login') &&
+            !window.location.pathname.startsWith('/signup') &&
+            !window.location.pathname.startsWith('/forgot-password') &&
+            !window.location.pathname.startsWith('/reset-password') &&
+            !error.config?.url?.includes('/auth/me')
+        ) {
+            window.location.href = '/login';
+        }
+        return Promise.reject(error);
+    },
+);
 
 // Auth
 export const authApi = {

@@ -2,6 +2,7 @@ import { Controller, Get, Post, Delete, Param, Body, UseGuards } from '@nestjs/c
 import { PlayersService } from './players.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../../common/interfaces';
 import { ServersService } from '../servers/servers.service';
 import { PlayerNameDto, BanPlayerDto, IpActionDto, BanIpDto, KickPlayerDto } from '../../common/dto';
 

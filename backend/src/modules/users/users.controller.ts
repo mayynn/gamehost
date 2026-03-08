@@ -2,6 +2,7 @@ import { Controller, Get, Patch, Post, Body, UseGuards } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../../common/interfaces';
 import { UpdateProfileDto, ChangePasswordDto } from '../../common/dto';
 
 @Controller('users')

@@ -61,7 +61,7 @@ export class CreatePlanDto {
     eggId?: number;
 
     @IsOptional()
-    @IsString()
+    @IsEnum(['DYNAMIC', 'ADMIN_LOCKED', 'USER_SELECTABLE'])
     nodeAssignMode?: string;
 
     @IsOptional()
@@ -98,7 +98,7 @@ export class UpdatePlanDto {
     @IsOptional() @IsNumber() @Min(0) pricePerGb?: number;
     @IsOptional() @IsInt() nodeId?: number;
     @IsOptional() @IsInt() eggId?: number;
-    @IsOptional() @IsString() nodeAssignMode?: string;
+    @IsOptional() @IsEnum(['DYNAMIC', 'ADMIN_LOCKED', 'USER_SELECTABLE']) nodeAssignMode?: string;
     @IsOptional() @IsBoolean() isActive?: boolean;
     @IsOptional() @IsInt() sortOrder?: number;
     @IsOptional() @IsInt() @Min(128) minRam?: number;

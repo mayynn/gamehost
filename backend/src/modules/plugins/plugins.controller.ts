@@ -2,6 +2,7 @@ import { Controller, Get, Post, Delete, Param, Query, Body, UseGuards } from '@n
 import { PluginsService } from './plugins.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../../common/interfaces';
 import { ServersService } from '../servers/servers.service';
 import { InstallModrinthDto, InstallSpigetDto, InstallSpigetVersionDto, UpdatePluginDto, UpdateAllPluginsDto } from '../../common/dto';
 

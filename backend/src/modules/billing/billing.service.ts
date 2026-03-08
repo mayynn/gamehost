@@ -8,6 +8,15 @@ import { DiscordService } from '../discord/discord.service';
 import { EmailService } from '../auth/email.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { PaymentGateway, PaymentStatus, ServerStatus, UpiStatus } from '@prisma/client';
+import { calculateCustomServerPrice } from '../../common/utils/pricing';
+import {
+    FREE_SERVER_RENEWAL_DAYS,
+    PAID_SERVER_RENEWAL_DAYS,
+    SUSPENSION_DELETE_THRESHOLD_HOURS,
+    BILLING_CRON_LOCK_TTL,
+    MIN_PAYMENT_AMOUNT,
+    MAX_PAYMENT_AMOUNT,
+} from '../../common/constants';
 import axios from 'axios';
 import * as crypto from 'crypto';
 
@@ -32,8 +41,8 @@ export class BillingService {
             throw new BadRequestException('Razorpay is not enabled');
         }
 
-        if (!amount || amount < 1 || amount > 100000) {
-            throw new BadRequestException('Amount must be between ₹1 and ₹1,00,000');
+        if (!amount || amount < MIN_PAYMENT_AMOUNT || amount > MAX_PAYMENT_AMOUNT) {
+            throw new BadRequestException(`Amount must be between ₹${MIN_PAYMENT_AMOUNT} and ₹${MAX_PAYMENT_AMOUNT.toLocaleString('en-IN')}`);
         }
 
         const Razorpay = require('razorpay');
@@ -120,8 +129,8 @@ export class BillingService {
             throw new BadRequestException('Cashfree is not enabled');
         }
 
-        if (!amount || amount < 1 || amount > 100000) {
-            throw new BadRequestException('Amount must be between ₹1 and ₹1,00,000');
+        if (!amount || amount < MIN_PAYMENT_AMOUNT || amount > MAX_PAYMENT_AMOUNT) {
+            throw new BadRequestException(`Amount must be between ₹${MIN_PAYMENT_AMOUNT} and ₹${MAX_PAYMENT_AMOUNT.toLocaleString('en-IN')}`);
         }
 
         const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -223,8 +232,8 @@ export class BillingService {
             throw new BadRequestException('UPI payments are not enabled');
         }
 
-        if (!amount || amount < 1 || amount > 100000) {
-            throw new BadRequestException('Amount must be between ₹1 and ₹1,00,000');
+        if (!amount || amount < MIN_PAYMENT_AMOUNT || amount > MAX_PAYMENT_AMOUNT) {
+            throw new BadRequestException(`Amount must be between ₹${MIN_PAYMENT_AMOUNT} and ₹${MAX_PAYMENT_AMOUNT.toLocaleString('en-IN')}`);
         }
 
         if (!utr || typeof utr !== 'string' || utr.trim().length < 6) {
@@ -356,7 +365,7 @@ export class BillingService {
                 include: { plan: true },
             });
             if (server) {
-                const renewalDays = server.plan?.renewalPeriodDays || (server.isFreeServer ? 7 : 30);
+                const renewalDays = server.plan?.renewalPeriodDays || (server.isFreeServer ? FREE_SERVER_RENEWAL_DAYS : PAID_SERVER_RENEWAL_DAYS);
                 const currentExpiry = server.expiresAt?.getTime() || Date.now();
                 const newExpiry = new Date(Math.max(Date.now(), currentExpiry) + renewalDays * 24 * 60 * 60 * 1000);
 
@@ -392,25 +401,24 @@ export class BillingService {
         this.logger.log(`Payment ${payment.id} completed: ₹${payment.amount} via ${payment.gateway}`);
     }
 
-    // ========== SERVER RENEWAL COST CALCULATOR ==========
+    // ─── Server Renewal Cost Calculator ──────────────────────
 
     private async calculateServerRenewalCost(server: any): Promise<number> {
         if (server.isFreeServer) return 0;
         if (!server.planId) return 0;
 
-        // Use included plan relation if available, otherwise fetch
         const plan = server.plan || await this.prisma.plan.findUnique({ where: { id: server.planId } });
         if (!plan) return 0;
 
-        // Use explicit renewalCost if set on the plan
         if (plan.renewalCost > 0) return plan.renewalCost;
 
         if (plan.type === 'CUSTOM') {
-            const pricePerGb = plan.pricePerGb || 50;
-            const ramGb = server.ram / 1024;
-            const cpuFactor = server.cpu / 100;
-            const diskGb = server.disk / 1024;
-            return Math.ceil(ramGb * pricePerGb + diskGb * (pricePerGb * 0.1) + cpuFactor * (pricePerGb * 0.5));
+            return calculateCustomServerPrice({
+                ram: server.ram,
+                cpu: server.cpu,
+                disk: server.disk,
+                pricePerGb: plan.pricePerGb || 50,
+            });
         }
 
         return plan.pricePerMonth || 0;
@@ -421,7 +429,7 @@ export class BillingService {
     @Cron(CronExpression.EVERY_HOUR)
     async checkRenewals() {
         const lockKey = 'lock:billing:checkRenewals';
-        const acquired = await this.redis.acquireLock(lockKey, 300); // 5 min lock
+        const acquired = await this.redis.acquireLock(lockKey, BILLING_CRON_LOCK_TTL);
         if (!acquired) {
             this.logger.debug('checkRenewals: skipped — another instance holds the lock');
             return;
@@ -563,8 +571,8 @@ export class BillingService {
             this.logger.warn(`Server ${server.id} suspended (expired)`);
         }
 
-        // ── Step 4: Delete servers suspended for 48+ hours ──
-        const deleteThreshold = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+        // ── Step 4: Delete servers suspended for too long ──
+        const deleteThreshold = new Date(now.getTime() - SUSPENSION_DELETE_THRESHOLD_HOURS * 60 * 60 * 1000);
         const toDelete = await this.prisma.server.findMany({
             where: {
                 status: ServerStatus.SUSPENDED,

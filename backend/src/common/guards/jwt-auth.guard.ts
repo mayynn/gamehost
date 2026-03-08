@@ -3,8 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import * as jwt from 'jsonwebtoken';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
-
-const USER_CACHE_TTL = 60; // seconds — balance/credits cached for 60s max
+import { USER_SESSION_CACHE_TTL } from '../constants';
+import { JwtPayload } from '../interfaces';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -27,9 +27,9 @@ export class JwtAuthGuard implements CanActivate {
         const secret = this.config.get<string>('JWT_SECRET', '');
         if (!secret) throw new UnauthorizedException('JWT secret not configured');
 
-        let payload: any;
+        let payload: JwtPayload;
         try {
-            payload = jwt.verify(token, secret, { algorithms: ['HS256'] });
+            payload = jwt.verify(token, secret, { algorithms: ['HS256'] }) as JwtPayload;
         } catch {
             throw new UnauthorizedException('Invalid or expired token');
         }
@@ -70,7 +70,7 @@ export class JwtAuthGuard implements CanActivate {
 
         // Cache user data for subsequent requests
         try {
-            await this.redis.set(cacheKey, JSON.stringify(user), USER_CACHE_TTL);
+            await this.redis.set(cacheKey, JSON.stringify(user), USER_SESSION_CACHE_TTL);
         } catch {
             // Redis down — non-fatal, just skip caching
         }

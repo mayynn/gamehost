@@ -41,15 +41,27 @@ const NAV = [
 
 /* ═══════════ MAIN ADMIN PAGE ═══════════ */
 export default function AdminPage() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const router = useRouter();
   const [tab, setTab] = useState('dashboard');
 
   useEffect(() => {
-    if (user && user.role !== 'ADMIN') router.push('/dashboard');
-  }, [user, router]);
+    if (!loading && !user) router.push('/login');
+    else if (!loading && user && user.role !== 'ADMIN') router.push('/dashboard');
+  }, [user, loading, router]);
 
-  if (!user || user.role !== 'ADMIN') return null;
+  if (loading || !user || user.role !== 'ADMIN') {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-dark)' }}>
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center animate-pulse">
+            <Zap className="w-6 h-6 text-white" />
+          </div>
+          <Loader2 className="w-6 h-6 text-primary/60 animate-spin" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-[calc(100vh-80px)] gap-0">
@@ -515,8 +527,12 @@ function PlansTab() {
   const save = async () => {
     setSaving(true);
     try {
-      const payload = { ...editing };
-      delete payload.id; delete payload.createdAt; delete payload.updatedAt; delete payload._count;
+      const PLAN_FIELDS = ['name','description','type','ram','cpu','disk','backups','ports','databases',
+        'pricePerMonth','pricePerGb','nodeId','eggId','nodeAssignMode','isActive','sortOrder',
+        'minRam','maxRam','minCpu','maxCpu','minDisk','maxDisk','maxBackups','maxPorts',
+        'renewalPeriodDays','renewalCost'];
+      const payload: any = {};
+      for (const k of PLAN_FIELDS) { if (editing[k] !== undefined) payload[k] = editing[k]; }
       if (editing.id) await adminApi.updatePlan(editing.id, payload);
       else await adminApi.createPlan(payload);
       toast.success('Saved'); setEditing(null); fetchPlans();
@@ -532,7 +548,7 @@ function PlansTab() {
   const newPlan = () => setEditing({
     name: '', description: '', type: 'PREMIUM', ram: 1024, cpu: 100, disk: 5120,
     backups: 1, ports: 1, databases: 0, pricePerMonth: 0, pricePerGb: 0,
-    nodeId: null, eggId: null, nodeAssignMode: 'ROUND_ROBIN',
+    nodeId: null, eggId: null, nodeAssignMode: 'DYNAMIC',
     isActive: true, sortOrder: 0, renewalPeriodDays: 30, renewalCost: 0,
     minRam: 128, maxRam: 8192, minCpu: 50, maxCpu: 400, minDisk: 1024, maxDisk: 51200,
   });
@@ -573,7 +589,7 @@ function PlansTab() {
                   {p.backups > 0 && <span>{p.backups} backups</span>}
                   {p.databases > 0 && <span>{p.databases} DBs</span>}
                 </div>
-                {p.renewalPeriodDays && <p className="text-[10px] text-gray-600">Renewal: {p.renewalPeriodDays}d / ₹{p.renewalCost ?? p.pricePerMonth}</p>}
+                {p.renewalPeriodDays && <p className="text-[10px] text-gray-600">Renewal: {p.renewalPeriodDays}d / {p.type === 'FREE' ? '1 Credit' : `₹${p.renewalCost ?? p.pricePerMonth}`}</p>}
                 <div className="flex items-center gap-1 absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
                   <IconBtn onClick={() => setEditing({ ...p })} tip="Edit"><Edit3 className="w-3.5 h-3.5" /></IconBtn>
                   <IconBtn onClick={() => remove(p.id)} tip="Delete" danger><Trash2 className="w-3.5 h-3.5" /></IconBtn>
@@ -637,11 +653,21 @@ function PlansTab() {
 
                 {/* Pricing & Renewal */}
                 <FieldGroup title="Pricing & Renewal">
-                  <div className="grid grid-cols-3 gap-3">
-                    <Field label="Price/Month (₹)"><input type="number" value={editing.pricePerMonth ?? 0} onChange={e => setEditing({ ...editing, pricePerMonth: +e.target.value })} className="input-field text-sm" /></Field>
-                    <Field label="Renewal Period (days)"><input type="number" value={editing.renewalPeriodDays ?? 30} onChange={e => setEditing({ ...editing, renewalPeriodDays: +e.target.value })} className="input-field text-sm" /></Field>
-                    <Field label="Renewal Cost (₹)"><input type="number" value={editing.renewalCost ?? 0} onChange={e => setEditing({ ...editing, renewalCost: +e.target.value })} className="input-field text-sm" /></Field>
-                  </div>
+                  {editing.type === 'FREE' ? (
+                    <div className="space-y-3">
+                      <div className="p-3 rounded-lg text-sm" style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.15)' }}>
+                        <p className="text-emerald-400 font-medium">Free Plan — uses credits for renewal</p>
+                        <p className="text-gray-500 text-[12px] mt-1">Creation is free. Users spend 1 credit per renewal cycle. No monetary cost.</p>
+                      </div>
+                      <Field label="Renewal Period (days)"><input type="number" value={editing.renewalPeriodDays ?? 7} onChange={e => setEditing({ ...editing, renewalPeriodDays: +e.target.value })} className="input-field text-sm" /></Field>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-3 gap-3">
+                      <Field label="Price/Month (₹)"><input type="number" value={editing.pricePerMonth ?? 0} onChange={e => setEditing({ ...editing, pricePerMonth: +e.target.value })} className="input-field text-sm" /></Field>
+                      <Field label="Renewal Period (days)"><input type="number" value={editing.renewalPeriodDays ?? 30} onChange={e => setEditing({ ...editing, renewalPeriodDays: +e.target.value })} className="input-field text-sm" /></Field>
+                      <Field label="Renewal Cost (₹)"><input type="number" value={editing.renewalCost ?? 0} onChange={e => setEditing({ ...editing, renewalCost: +e.target.value })} className="input-field text-sm" /></Field>
+                    </div>
+                  )}
                 </FieldGroup>
 
                 {/* Pterodactyl */}
@@ -660,7 +686,7 @@ function PlansTab() {
                       </select>
                     </Field>
                     <Field label="Node Assign Mode">
-                      <select value={editing.nodeAssignMode ?? 'ROUND_ROBIN'} onChange={e => setEditing({ ...editing, nodeAssignMode: e.target.value })} className="input-field text-sm">
+                      <select value={editing.nodeAssignMode ?? 'DYNAMIC'} onChange={e => setEditing({ ...editing, nodeAssignMode: e.target.value })} className="input-field text-sm">
                         <option value="DYNAMIC">Dynamic</option>
                         <option value="ADMIN_LOCKED">Admin Locked</option>
                         <option value="USER_SELECTABLE">User Selectable</option>

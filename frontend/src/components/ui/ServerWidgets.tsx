@@ -1,7 +1,6 @@
 'use client';
 
 import { motion, useMotionTemplate, useMotionValue, useSpring, useTransform } from 'framer-motion';
-import { useEffect, useRef, useState } from 'react';
 
 /* ═══════════════ Circular Progress Dial ═══════════════ */
 export function CircularProgress({ value, label, sublabel, color, glowColor }: { 

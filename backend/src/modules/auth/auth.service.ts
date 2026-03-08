@@ -8,6 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PterodactylService } from '../pterodactyl/pterodactyl.service';
 import { EmailService } from './email.service';
 import { AuthProvider, Role } from '@prisma/client';
+import { BCRYPT_SALT_ROUNDS } from '../../common/constants';
 
 interface OAuthProfile {
     email: string;
@@ -50,7 +51,7 @@ export class AuthService {
                 where: { id: existing.id },
                 data: {
                     name,
-                    passwordHash: await bcrypt.hash(password, 12),
+                    passwordHash: await bcrypt.hash(password, BCRYPT_SALT_ROUNDS),
                     emailVerifyToken: token,
                     emailVerifyExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
                 },
@@ -60,7 +61,7 @@ export class AuthService {
         }
 
         // Create new user
-        const passwordHash = await bcrypt.hash(password, 12);
+        const passwordHash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
         const verifyToken = randomBytes(32).toString('hex');
 
         const user = await this.prisma.user.create({
@@ -219,7 +220,7 @@ export class AuthService {
             throw new BadRequestException('Invalid or expired reset link. Please request a new one.');
         }
 
-        const passwordHash = await bcrypt.hash(newPassword, 12);
+        const passwordHash = await bcrypt.hash(newPassword, BCRYPT_SALT_ROUNDS);
         await this.prisma.user.update({
             where: { id: user.id },
             data: {

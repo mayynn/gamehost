@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PterodactylService } from '../pterodactyl/pterodactyl.service';
 import { PlanType } from '@prisma/client';
+import { calculateCustomServerPrice } from '../../common/utils/pricing';
 
 @Injectable()
 export class PlansService {
@@ -49,12 +50,12 @@ export class PlansService {
         const clampedCpu = Math.min(Math.max(cpu, plan.minCpu || 50), plan.maxCpu || 800);
         const clampedDisk = Math.min(Math.max(disk, plan.minDisk || 1024), plan.maxDisk || 102400);
 
-        const pricePerGb = plan.pricePerGb || 50;
-        const ramGb = clampedRam / 1024;
-        const cpuFactor = clampedCpu / 100;
-        const diskGb = clampedDisk / 1024;
-
-        const price = Math.ceil(ramGb * pricePerGb + diskGb * (pricePerGb * 0.1) + cpuFactor * (pricePerGb * 0.5));
+        const price = calculateCustomServerPrice({
+            ram: clampedRam,
+            cpu: clampedCpu,
+            disk: clampedDisk,
+            pricePerGb: plan.pricePerGb || 50,
+        });
 
         return { price, ram: clampedRam, cpu: clampedCpu, disk: clampedDisk };
     }

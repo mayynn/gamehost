@@ -1,7 +1,7 @@
 'use client';
 
 import { ReactNode } from 'react';
-import { motion, HTMLMotionProps } from 'framer-motion';
+import { motion } from 'framer-motion';
 
 // Stagger children animation container
 export function StaggerContainer({ children, className, delay = 0 }: { children: ReactNode; className?: string; delay?: number }) {
@@ -32,73 +32,6 @@ export function FadeUpItem({ children, className }: { children: ReactNode; class
     >
       {children}
     </motion.div>
-  );
-}
-
-// Scale in animation
-export function ScaleIn({ children, className, delay = 0 }: { children: ReactNode; className?: string; delay?: number }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.4, delay, ease: [0.16, 1, 0.3, 1] }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
-}
-
-// Slide in from right
-export function SlideInRight({ children, className, delay = 0 }: { children: ReactNode; className?: string; delay?: number }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: 30 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.5, delay, ease: [0.16, 1, 0.3, 1] }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
-}
-
-// Animated counter number
-export function AnimatedNumber({ value, suffix = '', prefix = '', className }: { value: number; suffix?: string; prefix?: string; className?: string }) {
-  return (
-    <motion.span
-      key={value}
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
-      className={className}
-    >
-      {prefix}{typeof value === 'number' ? value.toLocaleString() : value}{suffix}
-    </motion.span>
-  );
-}
-
-// Hover tilt 3D card
-export function Tilt3DCard({ children, className }: { children: ReactNode; className?: string }) {
-  return (
-    <motion.div
-      whileHover={{ rotateX: -2, rotateY: 4, scale: 1.02 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-      style={{ perspective: 1000, transformStyle: 'preserve-3d' }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
-}
-
-// Pulse glow dot (for status indicators)
-export function PulseGlow({ color = 'bg-green-400', size = 'w-2.5 h-2.5' }: { color?: string; size?: string }) {
-  return (
-    <span className="relative flex">
-      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${color} opacity-40`} />
-      <span className={`relative inline-flex rounded-full ${size} ${color}`} />
-    </span>
   );
 }
 

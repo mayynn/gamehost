@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
+import { BCRYPT_SALT_ROUNDS } from '../../common/constants';
 
 @Injectable()
 export class UsersService {
@@ -55,7 +56,7 @@ export class UsersService {
 
         if (newPassword.length < 8) throw new BadRequestException('Password must be at least 8 characters');
 
-        const hashed = await bcrypt.hash(newPassword, 12);
+        const hashed = await bcrypt.hash(newPassword, BCRYPT_SALT_ROUNDS);
         await this.prisma.user.update({
             where: { id: userId },
             data: { passwordHash: hashed },

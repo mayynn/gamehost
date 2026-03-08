@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PterodactylService } from '../pterodactyl/pterodactyl.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { ServerStatus } from '@prisma/client';
+import { FREE_SERVER_RENEWAL_DAYS, CREDITS_CRON_LOCK_TTL } from '../../common/constants';
 
 @Injectable()
 export class CreditsService {
@@ -139,7 +140,7 @@ export class CreditsService {
     @Cron(CronExpression.EVERY_30_MINUTES)
     async checkFreeServerCredits() {
         const lockKey = 'lock:credits:checkFreeServerCredits';
-        const acquired = await this.redis.acquireLock(lockKey, 180); // 3 min lock
+        const acquired = await this.redis.acquireLock(lockKey, CREDITS_CRON_LOCK_TTL);
         if (!acquired) {
             this.logger.debug('checkFreeServerCredits: skipped — another instance holds the lock');
             return;
@@ -187,7 +188,7 @@ export class CreditsService {
                         where: { userId: server.userId },
                         data: { amount: { decrement: 1 } },
                     });
-                    const renewalDays = 7;
+                    const renewalDays = FREE_SERVER_RENEWAL_DAYS;
                     const newExpiry = new Date(now.getTime() + renewalDays * 24 * 60 * 60 * 1000);
                     await this.prisma.server.update({
                         where: { id: server.id },

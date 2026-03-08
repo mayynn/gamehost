@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
-import { HealthController, RootController, StatsController } from './health.controller';
+import { HealthController } from './health.controller';
+import { RootController } from './root.controller';
+import { StatsController } from './stats.controller';
 import { SettingsController } from './settings.controller';
 
 @Module({

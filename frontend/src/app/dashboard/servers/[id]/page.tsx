@@ -48,6 +48,7 @@ export default function ServerDetailPage() {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [renewLoading, setRenewLoading] = useState(false);
   const [renewalCost, setRenewalCost] = useState<number | null>(null);
+  const [isFreeServer, setIsFreeServer] = useState(false);
   const [pluginProfile, setPluginProfile] = useState<any>(null);
   const [liveStats, setLiveStats] = useState({ cpuPercent: 0, memoryBytes: 0, diskBytes: 0, networkRx: 0, networkTx: 0, uptime: 0 });
   const statsWsRef = useRef<WebSocket | null>(null);
@@ -139,7 +140,7 @@ export default function ServerDetailPage() {
   };
 
   useEffect(() => {
-    if (server) serversApi.renewalCost(id).then(r => setRenewalCost(r.data.cost ?? r.data.price ?? r.data)).catch(() => {});
+    if (server) serversApi.renewalCost(id).then(r => { setRenewalCost(r.data.cost ?? r.data.price ?? r.data); setIsFreeServer(!!r.data.isFreeServer); }).catch(() => {});
   }, [server, id]);
 
   useEffect(() => {
@@ -198,7 +199,7 @@ export default function ServerDetailPage() {
             </div>
             {isExpired && (
               <button onClick={handleRenew} disabled={renewLoading} className="btn-primary ml-auto text-sm">
-                {renewLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : `Renew${renewalCost !== null ? ` (₹${renewalCost})` : ''}`}
+                {renewLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : `Renew${isFreeServer ? ' (1 Credit)' : renewalCost !== null ? ` (₹${renewalCost})` : ''}`}
               </button>
             )}
           </div>
