@@ -3,7 +3,8 @@ set -euo pipefail
 
 # ============================================================
 # GameHost Platform — Safe Restart
-# Usage: bash restart.sh [--force] [--service <name>] [--rebuild] [--no-cache]
+# Usage: bash restart.sh [--force] [--service <name>] [--rebuild]
+#                        [--no-cache] [--quick]
 #
 # Options:
 #   --force           Skip confirmation prompt
@@ -11,6 +12,11 @@ set -euo pipefail
 #                     (postgres, redis, backend, frontend, nginx)
 #   --rebuild         Force rebuild images (picks up code changes)
 #   --no-cache        Full rebuild from scratch (clears Docker layer cache)
+#   --quick           Quick restart, skip change detection & rebuild
+#
+# By default, restart.sh detects if source code has changed since the
+# last build and auto-rebuilds. This ensures every user always sees
+# the latest version — no stale browser cache.
 # ============================================================
 
 # ─── Build log (captured so errors are never lost) ────────
@@ -150,6 +156,7 @@ FORCE=false
 TARGET_SERVICE=""
 REBUILD=false
 NO_CACHE=false
+QUICK=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -170,8 +177,12 @@ while [[ $# -gt 0 ]]; do
       REBUILD=true
       shift
       ;;
+    --quick|-q)
+      QUICK=true
+      shift
+      ;;
     --help|-h)
-      echo "Usage: bash restart.sh [--force] [--service <name>] [--rebuild] [--no-cache]"
+      echo "Usage: bash restart.sh [--force] [--service <name>] [--rebuild] [--no-cache] [--quick]"
       echo ""
       echo "Options:"
       echo "  --force, -f           Skip confirmation prompt"
@@ -179,7 +190,11 @@ while [[ $# -gt 0 ]]; do
       echo "                        (postgres, redis, backend, frontend, nginx)"
       echo "  --rebuild, -r         Force rebuild images (picks up code changes)"
       echo "  --no-cache            Full rebuild from scratch (clears Docker layer cache)"
+      echo "  --quick, -q           Quick restart, skip change detection & rebuild"
       echo "  --help, -h            Show this help"
+      echo ""
+      echo "By default, the script auto-detects code changes since the last build"
+      echo "and triggers a rebuild automatically.  Use --quick to skip this."
       exit 0
       ;;
     *)
@@ -189,6 +204,64 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# ─── Source Change Detection ──────────────────────────────
+# Computes a hash of all source files. If it differs from the last
+# build, we auto-set REBUILD=true so users always see fresh code.
+HASH_FILE=".build-hash"
+
+compute_source_hash() {
+  # Hash all source files (backend + frontend + nginx config + docker configs)
+  # Excludes node_modules, .next, dist, .git
+  local hash=""
+  if command -v git >/dev/null 2>&1 && [ -d .git ]; then
+    # Prefer git — fast, ignores untracked noise
+    hash=$(git diff HEAD --stat 2>/dev/null; git log -1 --format='%H' 2>/dev/null; \
+           find backend/src backend/prisma frontend/src frontend/next.config.mjs \
+                nginx/nginx.conf docker-compose.yml \
+                backend/Dockerfile frontend/Dockerfile \
+                -type f 2>/dev/null | sort | xargs md5sum 2>/dev/null | md5sum | awk '{print $1}')
+  else
+    hash=$(find backend/src backend/prisma frontend/src frontend/next.config.mjs \
+                nginx/nginx.conf docker-compose.yml \
+                backend/Dockerfile frontend/Dockerfile \
+                -type f 2>/dev/null | sort | xargs md5sum 2>/dev/null | md5sum | awk '{print $1}')
+  fi
+  echo "$hash"
+}
+
+auto_detect_changes() {
+  if $QUICK || $REBUILD || $NO_CACHE; then
+    return  # Skip detection if user explicitly chose a mode
+  fi
+
+  info "Checking for source code changes since last build..."
+
+  local current_hash
+  current_hash=$(compute_source_hash)
+
+  if [ -f "$HASH_FILE" ]; then
+    local previous_hash
+    previous_hash=$(cat "$HASH_FILE" 2>/dev/null || echo "")
+    if [ "$current_hash" != "$previous_hash" ]; then
+      ok "Code changes detected — auto-rebuild enabled"
+      detail "Previous: ${previous_hash:0:12}…  Current: ${current_hash:0:12}…"
+      REBUILD=true
+    else
+      ok "No source changes detected — using cached images"
+      detail "Hash: ${current_hash:0:12}…"
+    fi
+  else
+    ok "First build detected — rebuild enabled"
+    REBUILD=true
+  fi
+}
+
+save_build_hash() {
+  local current_hash
+  current_hash=$(compute_source_hash)
+  echo "$current_hash" > "$HASH_FILE"
+}
 
 # ─── Start ─────────────────────────────────────────────────
 START_TIME=$(date +%s)
@@ -214,6 +287,9 @@ ok "Docker Compose ${DIM}v${COMPOSE_VER}${NC}"
 
 [ -f .env ] || fail ".env not found — run install.sh first"
 ok ".env exists"
+
+# Auto-detect source changes (sets REBUILD=true if code changed)
+auto_detect_changes
 
 # Validate Dockerfiles (needed for rebuild)
 if $REBUILD; then
@@ -504,6 +580,65 @@ else
     fi
   else
     warn "curl not available — skipping health check"
+  fi
+
+  section_end
+fi
+
+# ── Save Build Hash (so next restart detects changes) ──────
+if $REBUILD || $NO_CACHE; then
+  save_build_hash
+fi
+
+# ── CDN / Cloudflare Cache Purge ─────────────────────────
+# If Cloudflare API credentials are in .env, purge CDN cache so every
+# user worldwide immediately gets the fresh build (no stale edge cache).
+purge_cdn_cache() {
+  local cf_zone cf_token
+  cf_zone=$(env_get .env CF_ZONE_ID 2>/dev/null || true)
+  cf_token=$(env_get .env CF_API_TOKEN 2>/dev/null || true)
+
+  if [ -z "$cf_zone" ] || [ -z "$cf_token" ]; then
+    return 1  # Not configured
+  fi
+
+  local response
+  response=$(curl -s -X POST \
+    "https://api.cloudflare.com/client/v4/zones/${cf_zone}/purge_cache" \
+    -H "Authorization: Bearer ${cf_token}" \
+    -H "Content-Type: application/json" \
+    --data '{"purge_everything":true}' \
+    --max-time 10 2>/dev/null || echo '{"success":false}')
+
+  if echo "$response" | grep -q '"success":true'; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+if $REBUILD || $NO_CACHE; then
+  section "Cache Busting"
+
+  ok "Next.js build uses content-hashed filenames"
+  detail "New JS/CSS chunks get unique hashes → browsers auto-fetch fresh assets"
+  ok "HTML served with no-cache headers via nginx"
+  detail "Every page load fetches fresh HTML → references new asset hashes"
+
+  # Try Cloudflare CDN purge
+  if command -v curl >/dev/null 2>&1; then
+    CF_ZONE_ID=$(env_get .env CF_ZONE_ID 2>/dev/null || true)
+    if [ -n "$CF_ZONE_ID" ]; then
+      info "Purging Cloudflare CDN cache..."
+      if purge_cdn_cache; then
+        ok "Cloudflare CDN cache purged globally"
+      else
+        warn "Cloudflare cache purge failed — check CF_ZONE_ID and CF_API_TOKEN in .env"
+      fi
+    else
+      detail "Cloudflare not configured — skipping CDN purge"
+      detail "To enable: add CF_ZONE_ID and CF_API_TOKEN to .env"
+    fi
   fi
 
   section_end

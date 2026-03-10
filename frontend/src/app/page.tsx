@@ -24,8 +24,6 @@ import dynamic from "next/dynamic";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
-gsap.registerPlugin(ScrollTrigger);
-
 const FloatingParticles = dynamic(
   () =>
     import("@/components/three/FloatingParticles").then((m) => ({
@@ -33,6 +31,8 @@ const FloatingParticles = dynamic(
     })),
   { ssr: false }
 );
+
+gsap.registerPlugin(ScrollTrigger);
 
 const features = [
   {

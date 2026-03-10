@@ -64,29 +64,6 @@ function Particles({ count = 200 }: { count?: number }) {
   );
 }
 
-function FloatingMesh() {
-  const meshRef = useRef<THREE.Mesh>(null);
-
-  useFrame((state) => {
-    if (!meshRef.current) return;
-    meshRef.current.rotation.x = state.clock.elapsedTime * 0.15;
-    meshRef.current.rotation.y = state.clock.elapsedTime * 0.1;
-    meshRef.current.position.y = Math.sin(state.clock.elapsedTime * 0.5) * 0.3;
-  });
-
-  return (
-    <mesh ref={meshRef}>
-      <icosahedronGeometry args={[1.5, 1]} />
-      <meshBasicMaterial
-        color="#FF6B35"
-        wireframe
-        transparent
-        opacity={0.08}
-      />
-    </mesh>
-  );
-}
-
 export function FloatingParticles({ className }: { className?: string }) {
   return (
     <div className={className}>
@@ -97,7 +74,6 @@ export function FloatingParticles({ className }: { className?: string }) {
         gl={{ antialias: false, alpha: true }}
       >
         <Particles count={150} />
-        <FloatingMesh />
       </Canvas>
     </div>
   );
