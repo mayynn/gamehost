@@ -1,14 +1,18 @@
-import { Loader2, Zap } from 'lucide-react';
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function DashboardLoading() {
-    return (
-        <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-dark, #060a14)' }}>
-            <div className="flex flex-col items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center animate-pulse">
-                    <Zap className="w-6 h-6 text-white" />
-                </div>
-                <Loader2 className="w-6 h-6 text-primary/60 animate-spin" />
-            </div>
-        </div>
-    );
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300">
+      <Skeleton className="h-8 w-48" />
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-28 rounded-xl" />
+        ))}
+      </div>
+      <div className="grid lg:grid-cols-2 gap-4">
+        <Skeleton className="h-64 rounded-xl" />
+        <Skeleton className="h-64 rounded-xl" />
+      </div>
+    </div>
+  );
 }

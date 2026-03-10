@@ -1,99 +1,97 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { serversApi } from '@/lib/api';
-import { motion } from 'framer-motion';
-import { StaggerContainer, FadeUpItem, Skeleton } from '@/components/ui/Animations';
-import { Server, Plus, Clock, Cpu, HardDrive, MemoryStick, Search, Rocket, ArrowRight } from 'lucide-react';
+import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
+import { motion } from "framer-motion";
+import { Server, Plus, ArrowRight, Search } from "lucide-react";
+import { serversApi } from "@/lib/api/servers";
+import { GlassCard } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useState } from "react";
 
 export default function ServersPage() {
-  const [servers, setServers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
+  const { data: servers, isLoading } = useQuery({
+    queryKey: ["servers"],
+    queryFn: () => serversApi.list().then((r) => r.data),
+  });
 
-  useEffect(() => {
-    serversApi.list().then(r => setServers(r.data)).catch(() => {}).finally(() => setLoading(false));
-  }, []);
-
-  const filtered = servers.filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
-  const active = servers.filter(s => s.status === 'ACTIVE').length;
+  const filtered = servers?.filter((s) => s.name.toLowerCase().includes(search.toLowerCase())) ?? [];
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-display font-bold text-white">My Servers</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            <span className="text-emerald-400 font-medium">{active} active</span> · {servers.length} total
-          </p>
+          <h1 className="text-2xl font-bold">Servers</h1>
+          <p className="text-sm text-muted-foreground mt-1">Manage all your game servers.</p>
         </div>
-        <Link href="/dashboard/servers/create" className="btn-primary flex items-center gap-2 text-sm w-fit">
-          <Rocket className="w-4 h-4" /> Deploy Server
+        <Link href="/dashboard/servers/create">
+          <Button variant="glow"><Plus className="w-4 h-4 mr-2" /> New Server</Button>
         </Link>
       </div>
 
-      {/* Search */}
       <div className="relative max-w-md">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
-        <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search servers..." className="input-field pl-11" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Input placeholder="Search servers..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10" />
       </div>
 
-      {/* Server List */}
-      {loading ? (
-        <div className="space-y-3">{[1, 2, 3].map(i => <Skeleton key={i} className="h-[88px] rounded-2xl" />)}</div>
-      ) : filtered.length === 0 ? (
-        <div className="neo-card text-center py-20">
-          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.12)' }}>
-            <Server className="w-7 h-7 text-primary/50" />
-          </div>
-          <h3 className="text-lg font-semibold text-white mb-2">{search ? 'No servers found' : 'No Servers Yet'}</h3>
-          <p className="text-gray-500 mb-6 text-sm max-w-xs mx-auto">{search ? 'Try a different search term.' : 'Deploy your first game server and start playing in seconds.'}</p>
-          {!search && <Link href="/dashboard/servers/create" className="btn-primary inline-flex items-center gap-2 text-sm"><Rocket className="w-4 h-4" /> Deploy Server</Link>}
-        </div>
-      ) : (
-        <StaggerContainer className="space-y-2.5">
-          {filtered.map((s: any) => {
-            const daysLeft = s.expiresAt ? Math.max(0, Math.ceil((new Date(s.expiresAt).getTime() - Date.now()) / 86400000)) : null;
-            const isUrgent = daysLeft !== null && daysLeft <= 3;
-            return (
-              <FadeUpItem key={s.id}>
-                <Link href={`/dashboard/servers/${s.id}`} className="block neo-card-interactive p-4 group">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform duration-300 group-hover:scale-110 ${
-                        s.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-400' :
-                        s.status === 'SUSPENDED' ? 'bg-orange-500/10 text-orange-400' :
-                        s.status === 'INSTALLING' ? 'bg-blue-500/10 text-blue-400' :
-                        'bg-red-500/10 text-red-400'
-                      }`}>
-                        <Server className="w-5 h-5" />
+      {isLoading ? (
+        <div className="grid gap-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24" />)}</div>
+      ) : filtered.length > 0 ? (
+        <motion.div initial="initial" animate="animate" variants={{ animate: { transition: { staggerChildren: 0.05 } } }} className="grid gap-3">
+          {filtered.map((server) => (
+            <motion.div key={server.id} variants={{ initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0 } }}>
+              <Link href={`/dashboard/servers/${server.id}`}>
+                <GlassCard hover className="p-5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-neon-orange/10 ring-1 ring-neon-orange/20">
+                        <Server className="w-6 h-6 text-neon-orange" />
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <h3 className="text-sm font-semibold text-white truncate">{s.name}</h3>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-gray-600 mt-1">
-                          <span className="flex items-center gap-1"><MemoryStick className="w-3 h-3" />{s.ram >= 1024 ? `${(s.ram/1024).toFixed(1)} GB` : `${s.ram} MB`}</span>
-                          <span className="flex items-center gap-1"><Cpu className="w-3 h-3" />{s.cpu}%</span>
-                          <span className="flex items-center gap-1"><HardDrive className="w-3 h-3" />{s.disk >= 1024 ? `${(s.disk/1024).toFixed(1)} GB` : `${s.disk} MB`}</span>
+                      <div>
+                        <p className="font-semibold">{server.name}</p>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                          <span>{server.ram} MB RAM</span>
+                          <span>&middot;</span>
+                          <span>{server.cpu}% CPU</span>
+                          <span>&middot;</span>
+                          <span>{server.disk} MB Disk</span>
                         </div>
+                        {server.plan && <p className="text-xs text-muted-foreground mt-0.5">Plan: {server.plan.name}</p>}
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      {daysLeft !== null && (
-                        <span className={`text-[11px] hidden sm:flex items-center gap-1 font-medium ${isUrgent ? 'text-red-400' : daysLeft <= 7 ? 'text-orange-400' : 'text-gray-600'}`}>
-                          <Clock className="w-3 h-3" />{daysLeft}d
-                        </span>
-                      )}
-                      <span className={`status-${s.status?.toLowerCase() || 'active'}`}>{s.status}</span>
-                      <ArrowRight className="w-4 h-4 text-gray-700 group-hover:text-primary group-hover:translate-x-0.5 transition-all hidden sm:block" />
+                    <div className="flex items-center gap-4">
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
+                        server.status === "ACTIVE" ? "bg-neon-green/10 text-neon-green" :
+                        server.status === "INSTALLING" ? "bg-neon-cyan/10 text-neon-cyan" :
+                        server.status === "SUSPENDED" ? "bg-neon-red/10 text-neon-red" :
+                        server.status === "EXPIRED" ? "bg-yellow-500/10 text-yellow-500" :
+                        "bg-white/5 text-muted-foreground"
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${
+                          server.status === "ACTIVE" ? "bg-neon-green" :
+                          server.status === "INSTALLING" ? "bg-neon-cyan" :
+                          server.status === "SUSPENDED" ? "bg-neon-red" :
+                          server.status === "EXPIRED" ? "bg-yellow-500" :
+                          "bg-muted-foreground"
+                        }`} />
+                        {server.status}
+                      </span>
+                      <ArrowRight className="w-4 h-4 text-muted-foreground" />
                     </div>
                   </div>
-                </Link>
-              </FadeUpItem>
-            );
-          })}
-        </StaggerContainer>
+                </GlassCard>
+              </Link>
+            </motion.div>
+          ))}
+        </motion.div>
+      ) : (
+        <GlassCard className="p-16 text-center">
+          <Server className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+          <p className="text-muted-foreground">{search ? "No servers match your search." : "No servers yet."}</p>
+        </GlassCard>
       )}
     </div>
   );

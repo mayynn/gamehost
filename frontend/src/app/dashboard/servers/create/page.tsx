@@ -1,277 +1,307 @@
-'use client';
+"use client";
 
-import { useEffect, useState, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { plansApi, serversApi } from '@/lib/api';
-import { motion } from 'framer-motion';
-import toast from 'react-hot-toast';
-import { Server, Cpu, HardDrive, MemoryStick, ArrowRight, Loader2, Package, ChevronLeft, Rocket, Zap, Crown, Star } from 'lucide-react';
-import Link from 'next/link';
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { motion, AnimatePresence } from "framer-motion";
+import { ArrowLeft, Check, ChevronRight, Cpu, HardDrive, MemoryStick, Server, Loader2 } from "lucide-react";
+import Link from "next/link";
+import { plansApi } from "@/lib/api/plans";
+import { serversApi } from "@/lib/api/servers";
+import { GlassCard } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import type { Plan, PriceCalculation } from "@/types";
+import { getApiErrorMessage } from "@/lib/utils";
+import type { CreateServerDto } from "@/types/dto";
+import toast from "react-hot-toast";
 
-const TYPE_CFG: Record<string, { bg: string; border: string; text: string; icon: any }> = {
-  FREE: { bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.2)', text: 'text-emerald-400', icon: Star },
-  PREMIUM: { bg: 'rgba(0,212,255,0.08)', border: 'rgba(0,212,255,0.2)', text: 'text-primary', icon: Crown },
-  CUSTOM: { bg: 'rgba(124,58,237,0.08)', border: 'rgba(124,58,237,0.2)', text: 'text-neon-purple', icon: Zap },
-};
+type Step = "plan" | "configure" | "review";
 
-function CreateForm() {
+export default function CreateServerPage() {
   const router = useRouter();
-  const params = useSearchParams();
-  const planId = params.get('plan');
+  const [step, setStep] = useState<Step>("plan");
+  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+  const [form, setForm] = useState<CreateServerDto>({
+    name: "",
+    planId: "",
+    eggId: 0,
+    nestId: 1,
+    ram: 0,
+    cpu: 0,
+    disk: 0,
+    environment: {},
+  });
+  const [price, setPrice] = useState<PriceCalculation | null>(null);
 
-  const [plans, setPlans] = useState<any[]>([]);
-  const [eggs, setEggs] = useState<any[]>([]);
-  const [nodes, setNodes] = useState<any[]>([]);
-  const [selectedPlan, setSelectedPlan] = useState<any>(null);
-  const [name, setName] = useState('');
-  const [eggId, setEggId] = useState<number>(0);
-  const [nestId, setNestId] = useState<number>(0);
-  const [nodeId, setNodeId] = useState<number | undefined>();
-  const [ram, setRam] = useState(1024);
-  const [cpu, setCpu] = useState(100);
-  const [disk, setDisk] = useState(5120);
-  const [customPrice, setCustomPrice] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [dataLoading, setDataLoading] = useState(true);
+  const { data: plans, isLoading: plansLoading } = useQuery({
+    queryKey: ["plans"],
+    queryFn: () => plansApi.list().then((r) => r.data),
+  });
+
+  const { data: eggs } = useQuery({
+    queryKey: ["eggs"],
+    queryFn: () => plansApi.getEggs().then((r) => r.data),
+  });
+
+  const { data: nodes } = useQuery({
+    queryKey: ["nodes"],
+    queryFn: () => plansApi.getNodes().then((r) => r.data),
+    enabled: selectedPlan?.nodeAssignMode === "USER_SELECTABLE",
+  });
+
+  const calcMutation = useMutation({
+    mutationFn: (d: { planId: string; ram: number; cpu: number; disk: number }) =>
+      plansApi.calculatePrice(d).then((r) => r.data),
+    onSuccess: setPrice,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (d: CreateServerDto) => serversApi.create(d).then((r) => r.data),
+    onSuccess: (data) => {
+      toast.success("Server created!");
+      router.push(`/dashboard/servers/${data.id}`);
+    },
+    onError: (e: unknown) => toast.error(getApiErrorMessage(e, "Failed to create server")),
+  });
+
+  const selectPlan = (plan: Plan) => {
+    setSelectedPlan(plan);
+    setForm((f) => ({
+      ...f,
+      planId: plan.id,
+      eggId: plan.eggId || 0,
+      ram: plan.type === "CUSTOM" ? (plan.minRam || plan.ram) : plan.ram,
+      cpu: plan.type === "CUSTOM" ? (plan.minCpu || plan.cpu) : plan.cpu,
+      disk: plan.type === "CUSTOM" ? (plan.minDisk || plan.disk) : plan.disk,
+    }));
+    setStep("configure");
+  };
 
   useEffect(() => {
-    Promise.all([
-      plansApi.list().then(r => setPlans(r.data)),
-      plansApi.eggs().then(r => setEggs(r.data)).catch(() => {}),
-      plansApi.nodes().then(r => setNodes(r.data)).catch(() => {}),
-    ]).finally(() => setDataLoading(false));
-  }, []);
-
-  useEffect(() => {
-    if (planId && plans.length) {
-      const p = plans.find((pl: any) => pl.id === planId);
-      if (p) { setSelectedPlan(p); setRam(p.ram); setCpu(p.cpu); setDisk(p.disk); }
-    }
-  }, [planId, plans]);
-
-  useEffect(() => {
-    if (selectedPlan?.type === 'CUSTOM' && ram && cpu && disk) {
+    if (selectedPlan?.type === "CUSTOM" && form.planId) {
       const t = setTimeout(() => {
-        plansApi.calculate({ planId: selectedPlan.id, ram, cpu, disk })
-          .then(r => setCustomPrice(r.data.price)).catch(() => {});
+        calcMutation.mutate({ planId: form.planId, ram: form.ram!, cpu: form.cpu!, disk: form.disk! });
       }, 300);
       return () => clearTimeout(t);
     }
-  }, [selectedPlan, ram, cpu, disk]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.ram, form.cpu, form.disk, form.planId, selectedPlan?.type]);
 
-  const handleCreate = async () => {
-    if (!selectedPlan || !name || !eggId || !nestId) {
-      toast.error('Please fill all required fields'); return;
-    }
-    setLoading(true);
-    try {
-      const body: any = { name, planId: selectedPlan.id, eggId, nestId };
-      if (nodeId) body.nodeId = nodeId;
-      if (selectedPlan.type === 'CUSTOM') { body.ram = ram; body.cpu = cpu; body.disk = disk; }
-      const res = await serversApi.create(body);
-      toast.success('Server created!');
-      router.push(`/dashboard/servers/${res.data.id}`);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to create server');
-    } finally {
-      setLoading(false);
-    }
+  const handleCreate = () => {
+    if (!form.name.trim()) return toast.error("Enter a server name");
+    if (!form.eggId) return toast.error("Select a server type");
+    createMutation.mutate(form);
   };
 
-  if (dataLoading) return <div className="flex items-center justify-center py-20"><Loader2 className="w-7 h-7 text-primary animate-spin" /></div>;
+  const steps: { key: Step; label: string }[] = [
+    { key: "plan", label: "Select Plan" },
+    { key: "configure", label: "Configure" },
+    { key: "review", label: "Review & Create" },
+  ];
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-6 max-w-4xl mx-auto">
       <div className="flex items-center gap-3">
-        <Link href="/dashboard/servers" className="w-9 h-9 rounded-xl flex items-center justify-center text-gray-500 hover:text-white transition-colors" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
-          <ChevronLeft className="w-4 h-4" />
+        <Link href="/dashboard/servers">
+          <Button variant="ghost" size="sm"><ArrowLeft className="w-4 h-4" /></Button>
         </Link>
-        <div className="page-header">
-          <h1 className="text-2xl font-display font-bold text-white">Deploy Server</h1>
-          <p className="text-sm text-gray-500 mt-1">Configure and deploy your game server</p>
+        <div>
+          <h1 className="text-2xl font-bold">Create Server</h1>
+          <p className="text-sm text-muted-foreground">Set up a new game server in minutes.</p>
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        {/* Config */}
-        <div className="lg:col-span-2 space-y-5">
-          {/* Plan Selection */}
-          {!selectedPlan && (
-            <div className="neo-card overflow-hidden">
-              <div className="p-5 flex items-center gap-2.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.15)' }}>
-                  <Package className="w-3.5 h-3.5 text-primary" />
-                </div>
-                <h2 className="text-sm font-semibold text-white">Select Plan</h2>
-              </div>
-              <div className="p-5 grid sm:grid-cols-2 gap-3">
-                {plans.map((p: any) => {
-                  const tc = TYPE_CFG[p.type] || TYPE_CFG.PREMIUM;
-                  const TypeIcon = tc.icon;
-                  return (
-                    <button key={p.id} onClick={() => { setSelectedPlan(p); setRam(p.ram); setCpu(p.cpu); setDisk(p.disk); }}
-                      className="text-left p-4 rounded-xl transition-all hover:scale-[1.01]"
-                      style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium mb-2 ${tc.text}`}
-                        style={{ background: tc.bg, border: `1px solid ${tc.border}` }}>
-                        <TypeIcon className="w-3 h-3" /> {p.type}
-                      </span>
-                      <h3 className="font-semibold text-white text-sm">{p.name}</h3>
-                      <p className="text-[12px] text-gray-500 mt-1">{p.ram >= 1024 ? `${(p.ram/1024).toFixed(1)}GB` : `${p.ram}MB`} RAM · {p.cpu}% CPU · {p.disk >= 1024 ? `${(p.disk/1024).toFixed(1)}GB` : `${p.disk}MB`} Disk</p>
-                      <p className="text-base font-bold text-white mt-2">{p.type === 'FREE' ? 'Free' : p.type === 'CUSTOM' ? 'Custom' : `₹${p.pricePerMonth}/mo`}</p>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+      {/* Step indicator */}
+      <div className="flex items-center gap-2">
+        {steps.map((s, i) => (
+          <div key={s.key} className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                if (s.key === "plan") setStep("plan");
+                if (s.key === "configure" && selectedPlan) setStep("configure");
+                if (s.key === "review" && selectedPlan && form.name) setStep("review");
+              }}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                step === s.key ? "bg-neon-orange/10 text-neon-orange" :
+                steps.findIndex((x) => x.key === step) > i ? "text-neon-green" : "text-muted-foreground"
+              }`}
+            >
+              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
+                steps.findIndex((x) => x.key === step) > i ? "bg-neon-green/20 text-neon-green" :
+                step === s.key ? "bg-neon-orange/20 text-neon-orange" : "bg-white/5 text-muted-foreground"
+              }`}>
+                {steps.findIndex((x) => x.key === step) > i ? <Check className="w-3 h-3" /> : i + 1}
+              </span>
+              <span className="hidden sm:inline">{s.label}</span>
+            </button>
+            {i < steps.length - 1 && <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+          </div>
+        ))}
+      </div>
 
-          {selectedPlan && (
-            <>
-              {/* Selected plan banner */}
-              <div className="flex items-center justify-between p-4 rounded-xl" style={{ background: 'rgba(0,212,255,0.04)', border: '1px solid rgba(0,212,255,0.1)' }}>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.2)' }}>
-                    <Package className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-white">{selectedPlan.name}</p>
-                    <p className="text-[11px] text-gray-500">{selectedPlan.type} Plan</p>
-                  </div>
-                </div>
-                <button onClick={() => setSelectedPlan(null)} className="text-[12px] text-primary hover:text-primary/80 font-medium transition-colors">Change</button>
+      <AnimatePresence mode="wait">
+        {step === "plan" && (
+          <motion.div key="plan" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+            {plansLoading ? (
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-48 rounded-xl bg-white/5 animate-pulse" />)}
               </div>
-
-              {/* Server Name */}
-              <div className="neo-card overflow-hidden">
-                <div className="p-5 flex items-center gap-2.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <h2 className="text-sm font-semibold text-white">Server Name</h2>
-                </div>
-                <div className="p-5">
-                  <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="My Awesome Server" className="input-field" maxLength={100} />
-                </div>
-              </div>
-
-              {/* Custom Resources */}
-              {selectedPlan.type === 'CUSTOM' && (
-                <div className="neo-card overflow-hidden">
-                  <div className="p-5 flex items-center gap-2.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.15)' }}>
-                      <Zap className="w-3.5 h-3.5 text-neon-purple" />
+            ) : (
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {(plans ?? []).filter((p) => p.isActive).map((plan) => (
+                  <GlassCard key={plan.id} hover className="p-5 cursor-pointer group" onClick={() => selectPlan(plan)}>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        plan.type === "FREE" ? "bg-neon-green/10 text-neon-green" :
+                        plan.type === "CUSTOM" ? "bg-neon-purple/10 text-neon-purple" :
+                        "bg-neon-orange/10 text-neon-orange"
+                      }`}>{plan.type}</span>
                     </div>
-                    <h2 className="text-sm font-semibold text-white">Resources</h2>
-                  </div>
-                  <div className="p-5 space-y-6">
-                    {[
-                      { label: 'RAM', value: ram, set: setRam, min: selectedPlan.minRam || 512, max: selectedPlan.maxRam || 16384, icon: <MemoryStick className="w-4 h-4 text-emerald-400" />, format: (v: number) => v >= 1024 ? `${(v/1024).toFixed(1)} GB` : `${v} MB`, color: 'emerald' },
-                      { label: 'CPU', value: cpu, set: setCpu, min: selectedPlan.minCpu || 50, max: selectedPlan.maxCpu || 800, icon: <Cpu className="w-4 h-4 text-primary" />, format: (v: number) => `${v}%`, color: 'primary' },
-                      { label: 'Disk', value: disk, set: setDisk, min: selectedPlan.minDisk || 1024, max: selectedPlan.maxDisk || 51200, icon: <HardDrive className="w-4 h-4 text-neon-purple" />, format: (v: number) => v >= 1024 ? `${(v/1024).toFixed(1)} GB` : `${v} MB`, color: 'purple' },
-                    ].map(r => (
-                      <div key={r.label}>
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="text-sm text-gray-300 flex items-center gap-2">{r.icon} {r.label}</label>
-                          <span className="text-sm font-mono font-semibold text-white px-2 py-0.5 rounded-md" style={{ background: 'rgba(255,255,255,0.05)' }}>{r.format(r.value)}</span>
-                        </div>
-                        <input type="range" min={r.min} max={r.max} step={r.label === 'CPU' ? 10 : 128}
-                          value={r.value} onChange={e => r.set(Number(e.target.value))}
-                          className="w-full h-2 rounded-full bg-white/10 appearance-none cursor-pointer accent-primary" />
-                        <div className="flex justify-between text-[11px] text-gray-600 mt-1">
-                          <span>{r.format(r.min)}</span><span>{r.format(r.max)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                    <h3 className="text-lg font-bold mb-1">{plan.name}</h3>
+                    {plan.description && <p className="text-xs text-muted-foreground mb-4">{plan.description}</p>}
+                    <div className="space-y-2 text-sm text-muted-foreground mb-4">
+                      <div className="flex items-center gap-2"><MemoryStick className="w-3.5 h-3.5" /> {plan.type === "CUSTOM" ? `${plan.minRam || 512} - ${plan.maxRam || plan.ram}` : plan.ram} MB RAM</div>
+                      <div className="flex items-center gap-2"><Cpu className="w-3.5 h-3.5" /> {plan.type === "CUSTOM" ? `${plan.minCpu || 50} - ${plan.maxCpu || plan.cpu}` : plan.cpu}% CPU</div>
+                      <div className="flex items-center gap-2"><HardDrive className="w-3.5 h-3.5" /> {plan.type === "CUSTOM" ? `${plan.minDisk || 1024} - ${plan.maxDisk || plan.disk}` : plan.disk} MB Disk</div>
+                    </div>
+                    <div className="text-lg font-bold">
+                      {plan.type === "FREE" ? <span className="text-neon-green">Free</span> :
+                       plan.type === "CUSTOM" ? <span className="text-neon-purple">From ₹{plan.pricePerGb}/GB</span> :
+                       <span>₹{plan.pricePerMonth}<span className="text-xs text-muted-foreground font-normal">/mo</span></span>
+                      }
+                    </div>
+                  </GlassCard>
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
 
-              {/* Egg Selection */}
-              <div className="neo-card overflow-hidden">
-                <div className="p-5 flex items-center gap-2.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <h2 className="text-sm font-semibold text-white">Game / Software</h2>
-                  {eggId > 0 && <span className="text-[11px] text-emerald-400 ml-auto">Selected</span>}
-                </div>
-                <div className="p-5 grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {eggs.map((egg: any) => (
-                    <button key={`${egg.nestId || egg.nest}-${egg.id}`}
-                      onClick={() => { setEggId(egg.id); setNestId(egg.nestId || egg.nest); }}
-                      className="p-3 rounded-xl text-left transition-all text-sm"
-                      style={eggId === egg.id && nestId === (egg.nestId || egg.nest) ? { background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.25)', color: 'var(--primary)' } : { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', color: '#9ca3af' }}>
-                      {egg.name}
+        {step === "configure" && selectedPlan && (
+          <motion.div key="configure" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="space-y-6">
+            <GlassCard className="p-6 space-y-5">
+              <div>
+                <Label>Server Name</Label>
+                <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="My Minecraft Server" className="mt-1.5" />
+              </div>
+              <div>
+                <Label>Server Type (Egg)</Label>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-1.5">
+                  {(eggs ?? []).map((egg) => (
+                    <button key={egg.id} onClick={() => setForm((f) => ({ ...f, eggId: egg.id, nestId: egg.nest_id || 1, environment: {} }))}
+                      className={`p-3 rounded-xl border text-left transition-all text-sm ${
+                        form.eggId === egg.id ? "border-neon-orange bg-neon-orange/5" : "border-white/10 hover:border-white/20 bg-white/[0.02]"
+                      }`}>
+                      <p className="font-medium">{egg.name}</p>
+                      {egg.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{egg.description}</p>}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Node Selection */}
-              {nodes.length > 0 && (
-                <div className="neo-card overflow-hidden">
-                  <div className="p-5 flex items-center gap-2.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    <h2 className="text-sm font-semibold text-white">Node <span className="text-gray-600 font-normal">(Optional)</span></h2>
-                  </div>
-                  <div className="p-5 grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    <button onClick={() => setNodeId(undefined)}
-                      className="p-3 rounded-xl text-sm transition-all"
-                      style={!nodeId ? { background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.25)', color: 'var(--primary)' } : { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', color: '#9ca3af' }}>
-                      Auto Select
-                    </button>
-                    {nodes.map((n: any) => (
-                      <button key={n.id} onClick={() => setNodeId(n.id)}
-                        className="p-3 rounded-xl text-sm transition-all"
-                        style={nodeId === n.id ? { background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.25)', color: 'var(--primary)' } : { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', color: '#9ca3af' }}>
-                        {n.name}
+              {selectedPlan.type === "CUSTOM" && (
+                <div className="space-y-4">
+                  <h3 className="font-semibold text-sm">Custom Resources</h3>
+                  <ResourceSlider label="RAM" unit="MB" icon={<MemoryStick className="w-4 h-4" />}
+                    value={form.ram!} min={selectedPlan.minRam || 512} max={selectedPlan.maxRam || selectedPlan.ram} step={256}
+                    onChange={(v) => setForm((f) => ({ ...f, ram: v }))} />
+                  <ResourceSlider label="CPU" unit="%" icon={<Cpu className="w-4 h-4" />}
+                    value={form.cpu!} min={selectedPlan.minCpu || 50} max={selectedPlan.maxCpu || selectedPlan.cpu} step={25}
+                    onChange={(v) => setForm((f) => ({ ...f, cpu: v }))} />
+                  <ResourceSlider label="Disk" unit="MB" icon={<HardDrive className="w-4 h-4" />}
+                    value={form.disk!} min={selectedPlan.minDisk || 1024} max={selectedPlan.maxDisk || selectedPlan.disk} step={512}
+                    onChange={(v) => setForm((f) => ({ ...f, disk: v }))} />
+                  {price && (
+                    <div className="flex items-center justify-between p-4 rounded-xl bg-neon-orange/5 border border-neon-orange/20">
+                      <span className="text-sm text-muted-foreground">Estimated Price</span>
+                      <span className="text-xl font-bold text-neon-orange">₹{price.totalPrice}<span className="text-xs font-normal text-muted-foreground">/mo</span></span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {selectedPlan.nodeAssignMode === "USER_SELECTABLE" && nodes && (
+                <div>
+                  <Label>Select Node (Location)</Label>
+                  <div className="grid sm:grid-cols-2 gap-3 mt-1.5">
+                    {nodes.map((node) => (
+                      <button key={node.id} onClick={() => setForm((f) => ({ ...f, nodeId: node.id }))}
+                        className={`p-3 rounded-xl border text-left transition-all text-sm ${
+                          form.nodeId === node.id ? "border-neon-orange bg-neon-orange/5" : "border-white/10 hover:border-white/20 bg-white/[0.02]"
+                        }`}>
+                        <p className="font-medium">{node.name}</p>
                       </button>
                     ))}
                   </div>
                 </div>
               )}
-            </>
-          )}
-        </div>
+            </GlassCard>
 
-        {/* Summary Sidebar */}
-        {selectedPlan && (
-          <div className="lg:col-span-1">
-            <div className="premium-card sticky top-8">
-              <div className="premium-card-inner p-0">
-                <div className="p-5" style={{ background: 'linear-gradient(180deg, rgba(0,212,255,0.06) 0%, transparent 100%)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <h2 className="text-sm font-display font-bold text-white">Order Summary</h2>
+            <div className="flex justify-between">
+              <Button variant="ghost" onClick={() => setStep("plan")}>Back</Button>
+              <Button variant="glow" onClick={() => {
+                if (!form.name.trim()) return toast.error("Enter a server name");
+                if (!form.eggId) return toast.error("Select a server type");
+                setStep("review");
+              }}>Continue</Button>
+            </div>
+          </motion.div>
+        )}
+
+        {step === "review" && selectedPlan && (
+          <motion.div key="review" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="space-y-6">
+            <GlassCard className="p-6 space-y-4">
+              <h3 className="font-semibold">Review Server</h3>
+              <div className="grid sm:grid-cols-2 gap-4 text-sm">
+                <div className="space-y-3">
+                  <div><span className="text-muted-foreground">Name</span><p className="font-medium">{form.name}</p></div>
+                  <div><span className="text-muted-foreground">Plan</span><p className="font-medium">{selectedPlan.name} ({selectedPlan.type})</p></div>
+                  <div><span className="text-muted-foreground">Server Type</span>
+                    <p className="font-medium">{eggs?.find((e) => e.id === form.eggId)?.name || `Egg #${form.eggId}`}</p></div>
                 </div>
-                <div className="p-5 space-y-3 text-sm">
-                  <div className="flex justify-between"><span className="text-gray-500">Plan</span><span className="text-white font-medium">{selectedPlan.name}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">RAM</span><span className="text-white font-mono text-[13px]">{ram >= 1024 ? `${(ram/1024).toFixed(1)} GB` : `${ram} MB`}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">CPU</span><span className="text-white font-mono text-[13px]">{cpu}%</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">Disk</span><span className="text-white font-mono text-[13px]">{disk >= 1024 ? `${(disk/1024).toFixed(1)} GB` : `${disk} MB`}</span></div>
-                  {name && <div className="flex justify-between"><span className="text-gray-500">Name</span><span className="text-white truncate ml-4">{name}</span></div>}
-                </div>
-                <div className="p-5" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.01)' }}>
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-gray-500 text-sm">Total</span>
-                    <span className="text-2xl font-display font-bold text-white">
-                      {selectedPlan.type === 'FREE' ? 'Free' :
-                       selectedPlan.type === 'CUSTOM' ? (customPrice !== null ? `₹${customPrice.toFixed(2)}` : '...') :
-                       `₹${selectedPlan.pricePerMonth}`}
-                    </span>
-                  </div>
-                  {selectedPlan.type !== 'FREE' && <p className="text-[11px] text-gray-600 text-right">per month</p>}
-                  <button onClick={handleCreate} disabled={loading || !name || !eggId}
-                    className="btn-primary w-full flex items-center justify-center gap-2 mt-4">
-                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Rocket className="w-4 h-4" /> Deploy Server</>}
-                  </button>
+                <div className="space-y-3">
+                  <div><span className="text-muted-foreground">RAM</span><p className="font-medium">{selectedPlan.type === "CUSTOM" ? form.ram : selectedPlan.ram} MB</p></div>
+                  <div><span className="text-muted-foreground">CPU</span><p className="font-medium">{selectedPlan.type === "CUSTOM" ? form.cpu : selectedPlan.cpu}%</p></div>
+                  <div><span className="text-muted-foreground">Disk</span><p className="font-medium">{selectedPlan.type === "CUSTOM" ? form.disk : selectedPlan.disk} MB</p></div>
                 </div>
               </div>
+              {selectedPlan.type !== "FREE" && (
+                <div className="p-4 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between">
+                  <span className="text-muted-foreground">Total Price</span>
+                  <span className="text-xl font-bold">{selectedPlan.type === "CUSTOM" && price ? `₹${price.totalPrice}` : `₹${selectedPlan.pricePerMonth}`}<span className="text-xs text-muted-foreground font-normal">/mo</span></span>
+                </div>
+              )}
+            </GlassCard>
+            <div className="flex justify-between">
+              <Button variant="ghost" onClick={() => setStep("configure")}>Back</Button>
+              <Button variant="glow" onClick={handleCreate} disabled={createMutation.isPending}>
+                {createMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating...</> : <><Server className="w-4 h-4 mr-2" />Create Server</>}
+              </Button>
             </div>
-          </div>
+          </motion.div>
         )}
-      </div>
+      </AnimatePresence>
     </div>
   );
 }
 
-export default function CreateServerPage() {
+function ResourceSlider({ label, unit, icon, value, min, max, step, onChange }: {
+  label: string; unit: string; icon: React.ReactNode; value: number; min: number; max: number; step: number; onChange: (v: number) => void;
+}) {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center py-20"><Loader2 className="w-7 h-7 text-primary animate-spin" /></div>}>
-      <CreateForm />
-    </Suspense>
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2 text-sm">{icon} {label}</div>
+        <span className="text-sm font-mono">{value} {unit}</span>
+      </div>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-white/10 accent-neon-orange [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-neon-orange [&::-webkit-slider-thumb]:shadow-[0_0_10px_rgba(255,107,53,0.5)]" />
+      <div className="flex justify-between text-xs text-muted-foreground mt-1">
+        <span>{min} {unit}</span>
+        <span>{max} {unit}</span>
+      </div>
+    </div>
   );
 }

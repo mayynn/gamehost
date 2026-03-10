@@ -214,6 +214,18 @@ ok "Docker Compose ${DIM}v${COMPOSE_VER}${NC}"
 [ -f .env ] || fail ".env not found — run install.sh first"
 ok ".env exists"
 
+# Validate Prisma 7 config
+if [ ! -f backend/prisma.config.ts ]; then
+  fail "backend/prisma.config.ts is missing — required for Prisma 7 datasource configuration"
+fi
+ok "backend/prisma.config.ts ${DIM}(Prisma 7)${NC}"
+
+# Verify Dockerfiles exist
+for df in backend/Dockerfile frontend/Dockerfile; do
+  [ -f "$df" ] || fail "${df} is missing — required for Docker build"
+done
+ok "Dockerfiles present"
+
 # Verify critical .env values
 DB_USER_VAL=$(env_get .env DB_USER)
 DB_USER_VAL=${DB_USER_VAL:-gamehost}
@@ -334,6 +346,17 @@ if command -v git >/dev/null 2>&1 && [ -d .git ]; then
   else
     warn "Git pull failed — using local files"
   fi
+
+  # Validate critical files after pull
+  if [ ! -f backend/prisma.config.ts ]; then
+    fail "backend/prisma.config.ts is missing after pull — required for Prisma 7"
+  fi
+  for df in backend/Dockerfile frontend/Dockerfile; do
+    if [ ! -f "$df" ]; then
+      fail "${df} is missing after pull — required for Docker build"
+    fi
+  done
+  ok "Critical project files verified"
 else
   warn "No git repo — using local files"
 fi
@@ -552,14 +575,17 @@ for i in $(seq 1 30); do
 done
 
 MIGRATE_START=$(date +%s)
-info "Running Prisma migrate deploy (production-safe)..."
+info "Running Prisma migrate deploy (Prisma 7 — loads config from prisma.config.ts)..."
 
 MIGRATE_OUTPUT=$($COMPOSE exec -T backend npx prisma migrate deploy 2>&1) || {
   warn "Migration output:"
   echo "$MIGRATE_OUTPUT" | while IFS= read -r line; do
     detail "  $line"
   done
-  fail "Database migration failed! Your database backup is at: ${BACKUP_FILE:-N/A}"
+  fail "Database migration failed!
+   Prisma 7 loads datasource from prisma.config.ts (ensure DATABASE_URL is set).
+   Your database backup is at: ${BACKUP_FILE:-N/A}
+   Debug: docker compose exec backend npx prisma migrate status"
 }
 
 # Count applied migrations

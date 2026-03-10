@@ -2,5 +2,6 @@
     "compilerOptions": {
         "deleteOutDir": true
     },
-    "extends": "./tsconfig.json"
+    "extends": "./tsconfig.json",
+    "exclude": ["prisma.config.ts"]
 }

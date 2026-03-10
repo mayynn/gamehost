@@ -1,19 +1,21 @@
-import type { Metadata } from 'next';
-import ClientProviders from '@/components/ClientProviders';
-import './globals.css';
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import "./globals.css";
+import { Providers } from "@/components/providers";
+
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-    title: 'GameHost - Premium Game Server Hosting',
-    description: 'Deploy and manage game servers with ease. Minecraft, Rust, ARK and more. Powered by Pterodactyl.',
-    keywords: 'game hosting, minecraft hosting, server hosting, pterodactyl, game servers',
+  title: "GameHost - Modern Game Server Hosting",
+  description: "Enterprise-grade game server hosting platform with real-time monitoring and management.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-    return (
-        <html lang="en" className="dark">
-            <body>
-                <ClientProviders>{children}</ClientProviders>
-            </body>
-        </html>
-    );
+  return (
+    <html lang="en" className="dark">
+      <body className={inter.className}>
+        <Providers>{children}</Providers>
+      </body>
+    </html>
+  );
 }

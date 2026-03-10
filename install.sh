@@ -395,6 +395,24 @@ mkdir -p nginx/ssl backups
 ok "nginx/ssl"
 ok "backups"
 
+# Validate critical project files
+if [ ! -f backend/prisma.config.ts ]; then
+  fail "backend/prisma.config.ts is missing — required for Prisma 7 datasource configuration"
+fi
+ok "backend/prisma.config.ts ${DIM}(Prisma 7 datasource config)${NC}"
+
+if [ ! -f backend/prisma/schema.prisma ]; then
+  fail "backend/prisma/schema.prisma is missing — database schema not found"
+fi
+ok "backend/prisma/schema.prisma"
+
+for df in backend/Dockerfile frontend/Dockerfile; do
+  if [ ! -f "$df" ]; then
+    fail "${df} is missing — required for Docker build"
+  fi
+  ok "${df}"
+done
+
 section_end
 
 # ═══════════════════════════════════════════════════════════
@@ -893,14 +911,24 @@ done
 
 # Migrations
 MIGRATE_START=$(date +%s)
-info "Running Prisma migrations..."
-if ! $COMPOSE exec -T backend npx prisma migrate deploy >> "$BUILD_LOG" 2>&1; then
-  warn "Prisma migration failed — this may be OK on first run"
+info "Running Prisma migrations (Prisma 7 — loads config from prisma.config.ts)..."
+MIGRATE_OUTPUT=$($COMPOSE exec -T backend npx prisma migrate deploy 2>&1) || {
+  warn "Prisma migrate deploy output:"
+  echo "$MIGRATE_OUTPUT" | while IFS= read -r line; do
+    detail "  $line"
+  done
+  warn "Migration failed — this may be OK on first run"
   detail "The backend entrypoint also runs migrations on start."
-  detail "Check: docker compose logs backend | grep -i 'prisma\\|migrate'"
+  detail "Check: docker compose logs backend | grep -i 'prisma\\|migrate\\|config'"
   detail "Full log: ${BUILD_LOG}"
+}
+
+# Count applied migrations
+APPLIED=$(echo "${MIGRATE_OUTPUT:-}" | grep -c "applied" 2>/dev/null || echo "0")
+if [ "$APPLIED" -gt 0 ]; then
+  step_time $MIGRATE_START "${APPLIED} migration(s) applied"
 else
-  step_time $MIGRATE_START "Migrations applied"
+  step_time $MIGRATE_START "No pending migrations"
 fi
 
 section_end

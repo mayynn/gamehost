@@ -1,36 +1,38 @@
-'use client';
+"use client";
 
-import { useEffect } from 'react';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { useEffect } from "react";
+import { AlertTriangle, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
-export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
-    useEffect(() => {
-        console.error('App error:', error);
-    }, [error]);
+export default function GlobalError({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
+  useEffect(() => {
+    console.error("Application error:", error);
+  }, [error]);
 
-    return (
-        <div className="min-h-screen flex items-center justify-center p-6" style={{ background: 'var(--bg-dark, #060a14)' }}>
-            <div className="max-w-md w-full text-center space-y-6">
-                <div className="w-16 h-16 mx-auto rounded-2xl bg-red-500/10 flex items-center justify-center border border-red-500/20">
-                    <AlertTriangle className="w-8 h-8 text-red-400" />
-                </div>
-                <div>
-                    <h2 className="text-xl font-bold text-white mb-2">Something went wrong</h2>
-                    <p className="text-sm text-gray-400">An unexpected error occurred. Please try again.</p>
-                </div>
-                <div className="flex items-center justify-center gap-3">
-                    <button onClick={reset}
-                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium text-white transition-all"
-                        style={{ background: 'linear-gradient(135deg, var(--primary, #00d4ff), #0ea5e9)', boxShadow: '0 4px 12px rgba(0,212,255,0.3)' }}>
-                        <RefreshCw className="w-4 h-4" /> Try Again
-                    </button>
-                    <a href="/"
-                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium text-gray-300 hover:text-white transition-all"
-                        style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                        Go Home
-                    </a>
-                </div>
-            </div>
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute top-1/3 -right-1/4 w-[500px] h-[500px] rounded-full bg-neon-red/10 blur-[120px]" />
+        <div className="absolute bottom-1/3 -left-1/4 w-[400px] h-[400px] rounded-full bg-neon-orange/10 blur-[120px]" />
+      </div>
+      <div className="relative glass-card p-8 max-w-md w-full text-center space-y-4">
+        <div className="w-16 h-16 mx-auto rounded-2xl bg-neon-red/10 flex items-center justify-center">
+          <AlertTriangle className="w-8 h-8 text-neon-red" />
         </div>
-    );
+        <h2 className="text-xl font-bold">Something went wrong</h2>
+        <p className="text-sm text-muted-foreground">
+          {error.message || "An unexpected error occurred. Please try again."}
+        </p>
+        <Button variant="glow" onClick={reset}>
+          <RefreshCw className="w-4 h-4 mr-2" /> Try Again
+        </Button>
+      </div>
+    </div>
+  );
 }

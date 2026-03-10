@@ -215,6 +215,15 @@ ok "Docker Compose ${DIM}v${COMPOSE_VER}${NC}"
 [ -f .env ] || fail ".env not found — run install.sh first"
 ok ".env exists"
 
+# Validate Dockerfiles (needed for rebuild)
+if $REBUILD; then
+  for df in backend/Dockerfile frontend/Dockerfile; do
+    [ -f "$df" ] || fail "${df} is missing — required for Docker build"
+  done
+  [ -f backend/prisma.config.ts ] || fail "backend/prisma.config.ts is missing — required for Prisma 7"
+  ok "Build files verified ${DIM}(Dockerfiles + prisma.config.ts)${NC}"
+fi
+
 # Show current state
 RUNNING_CONTAINERS=$($COMPOSE ps --format '{{.Name}} {{.Status}}' 2>/dev/null || true)
 RUNNING_COUNT=$(echo "$RUNNING_CONTAINERS" | grep -c "Up" 2>/dev/null || echo "0")
